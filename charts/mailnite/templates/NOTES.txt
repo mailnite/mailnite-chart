@@ -1,0 +1,45 @@
+{{ include "mailnite.fullname" . }} is starting in namespace {{ .Release.Namespace }}.
+
+┌─────────────────────────────────────────────────────────────────────┐
+│   FINISH THE INSTALLATION IN YOUR BROWSER — SERVICE CONSOLE :8480   │
+└─────────────────────────────────────────────────────────────────────┘
+
+1) Wait for the pod:
+
+     kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "mailnite.fullname" . }}
+
+2) Forward the setup console to your machine and open it:
+
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mailnite.fullname" . }} 8480:8480
+
+     →  http://localhost:8480
+
+   First run walks you through everything: console password → storage →
+   admin account → infrastructure (domains, DNS, webmail, TLS, ports).
+   On the wizard's last step, KEEP the service panel — on Kubernetes,
+   port-forward to 8480 is the natural admin path.
+
+   Two Ports-step notes for Kubernetes:
+     • keep the HIGH internal binds (2525/2465/2587/2993) — the chart's mail
+       Service maps the standard ports onto them at the edge;
+     • enable the mail Service when ready:
+         helm upgrade {{ .Release.Name }} <chart> --reuse-values --set service.mail.enabled=true
+
+In-cluster addresses:
+
+     webmail   {{ include "mailnite.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.web.httpPort }}  (HTTP)  /  :{{ .Values.service.web.httpsPort }} (HTTPS)
+     console   {{ include "mailnite.fullname" . }}.{{ .Release.Namespace }}.svc:8480   (cluster-private — port-forward only)
+     pod IP    kubectl -n {{ .Release.Namespace }} get pod {{ include "mailnite.fullname" . }}-0 -o jsonpath='{.status.podIP}'
+
+{{- if .Values.service.mail.enabled }}
+
+Mail edge (Service {{ include "mailnite.fullname" . }}-mail, type {{ .Values.service.mail.type }}):
+
+     kubectl -n {{ .Release.Namespace }} get svc {{ include "mailnite.fullname" . }}-mail
+     # point your MX / A records at its EXTERNAL-IP
+{{- end }}
+
+Secrets (optional, see values.yaml):
+     envFromSecret — properties as env vars (mail.encryption-key → MAIL_ENCRYPTION_KEY, crypto.master-key → CRYPTO_MASTER_KEY, …)
+     filesSecret   — mounted at /var/lib/mailnite/conf/secrets; reference from the
+                     config by RELATIVE path, e.g. mail.encryption-key-url: secrets/mailnite.key

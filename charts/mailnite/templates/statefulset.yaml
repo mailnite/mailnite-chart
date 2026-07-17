@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mailnite.fullname" . }}
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  # ONE replica by design: the embedded badger store has a single writer.
+  replicas: {{ .Values.replicaCount }}
+  serviceName: {{ include "mailnite.fullname" . }}-hl
+  selector:
+    matchLabels: {{- include "mailnite.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "mailnite.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001            # the PVC must be writable by the mailnite user
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: mailnite
+          image: {{ include "mailnite.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["run"]
+          env:
+            # The bare-metal installer's layout, on the PVC: config (+ keys)
+            # in conf/, the mail store in data/ — one volume holds the server.
+            - name: HOME
+              value: /var/lib/mailnite
+            - name: MAILNITE_CONFIG
+              value: /var/lib/mailnite/conf/mailnite.yaml
+            - name: MAILNITE_DATA
+              value: /var/lib/mailnite/data
+            {{- if .Values.timezone }}
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.envFromSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.envFromSecret }}
+          {{- end }}
+          ports:
+            - { name: console,     containerPort: 8480, protocol: TCP }
+            - { name: http,        containerPort: {{ .Values.service.web.httpPort }},  protocol: TCP }
+            - { name: https,       containerPort: {{ .Values.service.web.httpsPort }}, protocol: TCP }
+            {{- range .Values.service.mail.ports }}
+            - { name: {{ .name }}, containerPort: {{ .targetPort }}, protocol: TCP }
+            {{- end }}
+          # /healthz is served on the console port in BOTH phases (the
+          # database-free installer and the regular server), so a pod mid-
+          # onboarding is healthy — setup continues in the browser.
+          livenessProbe:
+            httpGet: { path: /healthz, port: console }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: console }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          {{- with .Values.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/mailnite
+            {{- if .Values.filesSecret }}
+            # Secret files land BESIDE the config; reference them from the
+            # config by relative path, e.g. mail.encryption-key-url: secrets/mailnite.key
+            - name: secret-files
+              mountPath: /var/lib/mailnite/conf/secrets
+              readOnly: true
+            {{- end }}
+      {{- if .Values.filesSecret }}
+      volumes:
+        - name: secret-files
+          secret:
+            secretName: {{ .Values.filesSecret }}
+            defaultMode: 0400
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        accessModes: {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+  {{- end }}

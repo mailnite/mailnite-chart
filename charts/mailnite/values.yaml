@@ -1,0 +1,65 @@
+# Mailnite single-node (embedded badger) — the simple stateful install.
+# The cluster mode (consensusdb) is deliberately NOT this chart.
+
+image:
+  repository: mailnite/mailnite
+  tag: ""              # empty = the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# ONE replica — badger has a single writer. Scaling this up is not supported.
+replicaCount: 1
+
+# All state (config + keys + mail store) under one PersistentVolume, laid out
+# exactly like the bare-metal installer: /var/lib/mailnite/{conf,data}.
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: ""     # "" = the cluster default
+  accessModes: [ReadWriteOnce]
+
+# --- secrets: two patterns, both optional -----------------------------------
+# 1) ENV — every config property maps to an env var generically
+#    (mail.encryption-key → MAIL_ENCRYPTION_KEY, crypto.master-key →
+#    CRYPTO_MASTER_KEY, …). Put the sensitive ones in a Secret and name it
+#    here; it is attached with envFrom.
+envFromSecret: ""
+# 2) FILES — a Secret mounted read-only at /var/lib/mailnite/conf/secrets.
+#    Reference its entries from the config by RELATIVE path (resolved against
+#    the config directory), e.g.:  mail.encryption-key-url: secrets/mailnite.key
+filesSecret: ""
+
+# Extra literal env vars: [{ name: MAIL_DOMAIN, value: example.com }]
+extraEnv: []
+
+service:
+  # Webmail (HTTP/HTTPS). ClusterIP by default — front it with your ingress or
+  # switch the type. The setup console (8480) also rides this service so
+  # `kubectl port-forward svc/…` works, but ClusterIP keeps it cluster-private.
+  web:
+    type: ClusterIP
+    httpPort: 8080
+    httpsPort: 8443
+  # Mail protocols. Off by default; enable once onboarding is done. The
+  # standard public ports map onto the server's high internal binds — KEEP the
+  # high "dev" binds on the wizard's Ports step, this Service does the 25→2525
+  # translation at the edge (no NET_BIND_SERVICE needed in the pod).
+  mail:
+    enabled: false
+    type: LoadBalancer
+    annotations: {}
+    ports:
+      - { name: smtp,        port: 25,  targetPort: 2525 }
+      - { name: submissions, port: 465, targetPort: 2465 }
+      - { name: submission,  port: 587, targetPort: 2587 }
+      - { name: imaps,       port: 993, targetPort: 2993 }
+
+resources: {}
+  # requests: { cpu: 250m, memory: 512Mi }
+  # limits:   { memory: 2Gi }
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+timezone: ""           # e.g. Europe/Amsterdam → TZ env

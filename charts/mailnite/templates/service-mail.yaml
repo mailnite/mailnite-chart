@@ -1,0 +1,21 @@
+{{- if .Values.service.mail.enabled }}
+# The public mail edge: standard ports outside, the server's high internal
+# binds inside (25→2525, …) — keep the "dev" binds on the wizard's Ports step;
+# this Service is the privileged-port translation, so the pod never needs
+# NET_BIND_SERVICE.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mailnite.fullname" . }}-mail
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+  {{- with .Values.service.mail.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.mail.type }}
+  selector: {{- include "mailnite.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- range .Values.service.mail.ports }}
+    - { name: {{ .name }}, port: {{ .port }}, targetPort: {{ .targetPort }}, protocol: TCP }
+    {{- end }}
+{{- end }}

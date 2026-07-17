@@ -1,0 +1,15 @@
+apiVersion: v2
+name: mailnite
+description: >-
+  Mailnite — the complete self-hosted mail server in one binary. This chart
+  installs the simple single-node deployment: one stateful replica with the
+  embedded badger store on a PersistentVolume. Setup finishes in the BROWSER
+  on the :8480 service console (see the install notes) — nothing is
+  configured through values that onboarding asks interactively.
+type: application
+version: 0.1.0
+appVersion: "v0.2.0"
+keywords: [mail, smtp, imap, webmail, self-hosted]
+home: https://mailnite.com
+sources:
+  - https://github.com/mailnite/mailnite-dist

@@ -1,0 +1,27 @@
+# Headless service — the StatefulSet's stable identity.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mailnite.fullname" . }}-hl
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector: {{- include "mailnite.selectorLabels" . | nindent 4 }}
+  ports:
+    - { name: console, port: 8480, targetPort: console }
+---
+# Webmail + the setup console. ClusterIP: the console is reachable ONLY via
+# `kubectl port-forward` (or your ingress for the web ports) — never expose
+# 8480 publicly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mailnite.fullname" . }}
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.web.type }}
+  selector: {{- include "mailnite.selectorLabels" . | nindent 4 }}
+  ports:
+    - { name: console, port: 8480, targetPort: console }
+    - { name: http,    port: {{ .Values.service.web.httpPort }},  targetPort: http }
+    - { name: https,   port: {{ .Values.service.web.httpsPort }}, targetPort: https }
