@@ -22,8 +22,8 @@ Two composable patterns, both optional:
 
 | Pattern | Values key | How |
 |---|---|---|
-| env | `envFromSecret` | Every config property maps to an env var (`mail.encryption-key` → `MAIL_ENCRYPTION_KEY`, `crypto.master-key` → `CRYPTO_MASTER_KEY`). Priority: flags > env > config file. |
-| files | `filesSecret` | Mounted read-only at `/var/lib/mailnite/conf/secrets`; reference entries from the config by **relative path** (resolved against the config dir): `mail.encryption-key-url: secrets/mailnite.key`, `tls.cert-file: secrets/tls.crt`, `relay.cert-file: secrets/client.crt`. |
+| env | `envFromSecret` | Every config property maps to an env var (`mail.keeper-url` → `MAIL_KEEPER_URL`; the SMK rides `MAIL_SMK` with `mail.keeper-url: env://MAIL_SMK`). Priority: flags > env > config file. |
+| files | `filesSecret` | Mounted read-only at `/var/lib/mailnite/conf/secrets`; reference entries from the config by **relative path** (resolved against the config dir): `mail.keeper-url: secrets/mailnite.key`, `tls.cert-file: secrets/tls.crt`, `relay.cert-file: secrets/client.crt`. |
 
 ## Mail ports
 

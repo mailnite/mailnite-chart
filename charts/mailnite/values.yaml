@@ -2,6 +2,10 @@
 # The cluster mode (consensusdb) is deliberately NOT this chart.
 
 image:
+  # The image the release pipeline actually publishes (alpine-based, WITH
+  # ca-certificates — outbound TLS verification needs the CA trust store).
+  # A custom image must install ca-certificates too, or every remote
+  # certificate verifies as "unknown authority".
   repository: mailnite/mailnite
   tag: ""              # empty = the chart's appVersion
   pullPolicy: IfNotPresent
@@ -20,13 +24,13 @@ persistence:
 
 # --- secrets: two patterns, both optional -----------------------------------
 # 1) ENV — every config property maps to an env var generically
-#    (mail.encryption-key → MAIL_ENCRYPTION_KEY, crypto.master-key →
-#    CRYPTO_MASTER_KEY, …). Put the sensitive ones in a Secret and name it
+#    (mail.keeper-url → MAIL_KEEPER_URL; the SMK rides MAIL_SMK
+#    with mail.keeper-url: env://MAIL_SMK, …). Put the sensitive ones in a Secret and name it
 #    here; it is attached with envFrom.
 envFromSecret: ""
 # 2) FILES — a Secret mounted read-only at /var/lib/mailnite/conf/secrets.
 #    Reference its entries from the config by RELATIVE path (resolved against
-#    the config directory), e.g.:  mail.encryption-key-url: secrets/mailnite.key
+#    the config directory), e.g.:  mail.keeper-url: secrets/mailnite.key
 filesSecret: ""
 
 # Extra literal env vars: [{ name: MAIL_DOMAIN, value: example.com }]

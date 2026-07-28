@@ -27,11 +27,10 @@ mail-port Service once onboarding is done.
 Two composable patterns (see the chart's `values.yaml`):
 
 - **`envFromSecret`** — config properties as env vars from a Secret
-  (`mail.encryption-key` → `MAIL_ENCRYPTION_KEY`, `crypto.master-key` →
-  `CRYPTO_MASTER_KEY`, …).
+  (`mail.keeper-url` → `MAIL_KEEPER_URL`; the SMK itself rides `MAIL_SMK` with `mail.keeper-url: env://MAIL_SMK`, …).
 - **`filesSecret`** — a Secret mounted at `/var/lib/mailnite/conf/secrets`;
   reference its entries from the config by **relative path**:
-  `mail.encryption-key-url: secrets/mailnite.key`.
+  `mail.keeper-url: secrets/mailnite.key`.
 
 ## Roadmap
 

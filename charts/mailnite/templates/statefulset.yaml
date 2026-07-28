@@ -53,20 +53,23 @@ spec:
           {{- end }}
           ports:
             - { name: console,     containerPort: 8480, protocol: TCP }
+            - { name: health,      containerPort: 9090, protocol: TCP }
             - { name: http,        containerPort: {{ .Values.service.web.httpPort }},  protocol: TCP }
             - { name: https,       containerPort: {{ .Values.service.web.httpsPort }}, protocol: TCP }
             {{- range .Values.service.mail.ports }}
             - { name: {{ .name }}, containerPort: {{ .targetPort }}, protocol: TCP }
             {{- end }}
-          # /healthz is served on the console port in BOTH phases (the
-          # database-free installer and the regular server), so a pod mid-
-          # onboarding is healthy — setup continues in the browser.
+          # The dedicated health port (9090) serves the probes in BOTH phases:
+          # /healthz answers 200 while the process runs (liveness never gates
+          # on the store), /readyz answers 503 mid-onboarding and while the
+          # store is unavailable — so an unconfigured or storage-less pod is
+          # alive but out of rotation.
           livenessProbe:
-            httpGet: { path: /healthz, port: console }
+            httpGet: { path: /healthz, port: health }
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
-            httpGet: { path: /healthz, port: console }
+            httpGet: { path: /readyz, port: health }
             initialDelaySeconds: 3
             periodSeconds: 5
           {{- with .Values.resources }}
@@ -77,7 +80,7 @@ spec:
               mountPath: /var/lib/mailnite
             {{- if .Values.filesSecret }}
             # Secret files land BESIDE the config; reference them from the
-            # config by relative path, e.g. mail.encryption-key-url: secrets/mailnite.key
+            # config by relative path, e.g. mail.keeper-url: secrets/mailnite.key
             - name: secret-files
               mountPath: /var/lib/mailnite/conf/secrets
               readOnly: true

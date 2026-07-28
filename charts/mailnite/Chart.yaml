@@ -7,8 +7,10 @@ description: >-
   on the :8480 service console (see the install notes) — nothing is
   configured through values that onboarding asks interactively.
 type: application
-version: 0.1.0
-appVersion: "v0.2.0"
+version: 0.1.1
+# The Docker Hub tag format has NO leading v (release.yaml pushes
+# mailnite/mailnite:${VERSION#v}) — "v0.5.11" would pull a nonexistent tag.
+appVersion: "0.5.11"
 keywords: [mail, smtp, imap, webmail, self-hosted]
 home: https://mailnite.com
 sources:
