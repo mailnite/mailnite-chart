@@ -16,6 +16,15 @@ One PVC at `/var/lib/mailnite` — the bare-metal installer's exact layout:
 `conf/` (config, at-rest key, console credentials — written by onboarding)
 and `data/` (the badger mail store). `MAILNITE_CONFIG`/`MAILNITE_DATA` pin it.
 
+## Health probes
+
+Liveness and readiness target the dedicated health port **9090**, bound in
+every phase — `GET /healthz` is dependency-free ("OK" while the process
+serves, so a wedged store never causes a restart loop) and `GET /readyz` is
+store-gated and answers 503 while first-run onboarding is unfinished, so an
+unconfigured pod stays alive but takes no traffic. It is a cluster-internal
+port: never put it in a Service or an Ingress.
+
 ## Secrets
 
 Two composable patterns, both optional:
