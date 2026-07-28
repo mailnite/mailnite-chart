@@ -14,7 +14,7 @@ kubectl port-forward svc/mail-mailnite 8480:8480   # → http://localhost:8480
 
 One PVC at `/var/lib/mailnite` — the bare-metal installer's exact layout:
 `conf/` (config, at-rest key, console credentials — written by onboarding)
-and `data/` (the badger mail store). `MAILNITE_CONFIG`/`MAILNITE_DATA` pin it.
+and `data/` (the badger mail store). `MAIL_CONFIG`/`MAILNITE_DATA` pin it.
 
 ## Health probes
 

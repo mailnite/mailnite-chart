@@ -32,10 +32,11 @@ spec:
           args: ["run"]
           env:
             # The bare-metal installer's layout, on the PVC: config (+ keys)
-            # in conf/, the mail store in data/ — one volume holds the server.
+            # in conf/, the mail store in data/, the license credential in
+            # license/ — one volume holds the server.
             - name: HOME
               value: /var/lib/mailnite
-            - name: MAILNITE_CONFIG
+            - name: MAIL_CONFIG
               value: /var/lib/mailnite/conf/mailnite.yaml
             - name: MAILNITE_DATA
               value: /var/lib/mailnite/data
