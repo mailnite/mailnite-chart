@@ -2,14 +2,20 @@
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/*
+Resources are named after the CHART, not the release: `mailnite`, never
+`<release>-mailnite`. The names are documented — the post-install notes, the
+site's Operations page, the deploy pipelines and every runbook say
+`statefulset/mailnite` and `svc/mailnite` — and a name that changes with the
+release makes each of those wrong for someone.
+
+The trade-off is deliberate: two releases of this chart cannot share a
+namespace. That is the right shape for a mail server, which is one identity
+over one volume; give a second install its own namespace, or set
+fullnameOverride.
+*/}}
 {{- define "mailnite.fullname" -}}
-{{- if .Values.fullnameOverride -}}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
-{{- else if contains .Chart.Name .Release.Name -}}
-{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
-{{- else -}}
-{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
+{{- default (include "mailnite.name" .) .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "mailnite.labels" -}}

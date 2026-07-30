@@ -14,7 +14,7 @@ git clone https://github.com/mailnite/mailnite-chart
 helm install mail mailnite-chart/charts/mailnite
 
 # then finish the installation in your browser:
-kubectl port-forward svc/mail-mailnite 8480:8480
+kubectl port-forward sts/mailnite 8480:8480
 # → http://localhost:8480
 ```
 

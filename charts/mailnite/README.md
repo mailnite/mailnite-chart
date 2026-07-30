@@ -7,7 +7,7 @@ consensusdb cluster mode is deliberately not this chart.
 
 ```bash
 helm install mail ./charts/mailnite          # from a mailnite-chart checkout
-kubectl port-forward svc/mail-mailnite 8480:8480   # → http://localhost:8480
+kubectl port-forward sts/mailnite 8480:8480   # → http://localhost:8480
 ```
 
 ## Layout

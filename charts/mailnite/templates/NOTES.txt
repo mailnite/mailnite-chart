@@ -4,13 +4,20 @@
 │   FINISH THE INSTALLATION IN YOUR BROWSER — SERVICE CONSOLE :8480   │
 └─────────────────────────────────────────────────────────────────────┘
 
-1) Wait for the pod:
+1) Wait for the pod to START — not to become Ready:
 
-     kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "mailnite.fullname" . }}
+     kubectl -n {{ .Release.Namespace }} wait --for=jsonpath='{.status.phase}'=Running pod/{{ include "mailnite.fullname" . }}-0 --timeout=120s
+
+   A fresh install stays 0/1 Ready on purpose: readiness means "configured
+   and serving mail", and nothing is configured until you finish step 2.
+   `rollout status` waits for Ready, so it would sit here until it times out.
 
 2) Forward the setup console to your machine and open it:
 
-     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mailnite.fullname" . }} 8480:8480
+     kubectl -n {{ .Release.Namespace }} port-forward statefulset/{{ include "mailnite.fullname" . }} 8480:8480
+
+   The forward names the StatefulSet — the same object you waited for above —
+   so it lands on that pod with no Service selector in between.
 
      →  http://localhost:8480
 

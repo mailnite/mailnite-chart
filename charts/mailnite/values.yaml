@@ -14,6 +14,12 @@ imagePullSecrets: []
 # ONE replica — badger has a single writer. Scaling this up is not supported.
 replicaCount: 1
 
+# Resources are named `mailnite` regardless of the release name, so the names
+# in the notes, the docs and your runbooks stay true: statefulset/mailnite,
+# svc/mailnite, svc/mailnite-mail. The cost is that two releases cannot share
+# a namespace — give a second install its own, or rename it here.
+fullnameOverride: ""
+
 # Config, keys and the mail store on one PersistentVolume mounted at /data.
 # MAIL_HOME_DIR=/data makes the volume the layout: /data/{conf,data,log}.
 persistence:
