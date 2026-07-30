@@ -41,5 +41,5 @@ Mail edge (Service {{ include "mailnite.fullname" . }}-mail, type {{ .Values.ser
 
 Secrets (optional, see values.yaml):
      envFromSecret — properties as env vars (mail.keeper-url → MAIL_KEEPER_URL; the SMK rides MAIL_SMK with keeper env://MAIL_SMK, …)
-     filesSecret   — mounted at /var/lib/mailnite/conf/secrets; reference from the
+     filesSecret   — mounted at /data/conf/secrets; reference from the
                      config by RELATIVE path, e.g. mail.keeper-url: secrets/mailnite.key

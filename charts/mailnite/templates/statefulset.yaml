@@ -31,17 +31,15 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["run"]
           env:
-            # The bare-metal installer's layout, on the PVC: config (+ keys)
-            # in conf/, the mail store in data/, the license credential in
-            # license/ — one volume holds the server.
+            # One volume, mounted at /data, IS the layout: conf/, data/ and
+            # log/ all derive from the root below, so a single variable places
+            # the whole server. MAIL_CONF_DIR / MAIL_DATA_DIR / MAIL_LOG_DIR
+            # can override any one of them when they must live apart — which
+            # is the Linux package's case, not a container's.
             - name: HOME
-              value: /var/lib/mailnite
-            # One root; conf/, data/ and log/ derive from it. The volume below
-            # is mounted at exactly this path, so the layout needs no further
-            # configuration. MAIL_CONF_DIR / MAIL_DATA_DIR / MAIL_LOG_DIR can
-            # override any one of them individually when they must live apart.
+              value: /data
             - name: MAIL_HOME_DIR
-              value: /var/lib/mailnite
+              value: /data
             {{- if .Values.timezone }}
             - name: TZ
               value: {{ .Values.timezone | quote }}
@@ -79,13 +77,13 @@ spec:
           resources: {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            - name: state
-              mountPath: /var/lib/mailnite
+            - name: data
+              mountPath: /data
             {{- if .Values.filesSecret }}
             # Secret files land BESIDE the config; reference them from the
             # config by relative path, e.g. mail.keeper-url: secrets/mailnite.key
             - name: secret-files
-              mountPath: /var/lib/mailnite/conf/secrets
+              mountPath: /data/conf/secrets
               readOnly: true
             {{- end }}
       {{- if .Values.filesSecret }}
@@ -107,7 +105,7 @@ spec:
   {{- if .Values.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:
-        name: state
+        name: data
       spec:
         accessModes: {{- toYaml .Values.persistence.accessModes | nindent 10 }}
         {{- if .Values.persistence.storageClass }}

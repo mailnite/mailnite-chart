@@ -28,7 +28,7 @@ Two composable patterns (see the chart's `values.yaml`):
 
 - **`envFromSecret`** — config properties as env vars from a Secret
   (`mail.keeper-url` → `MAIL_KEEPER_URL`; the SMK itself rides `MAIL_SMK` with `mail.keeper-url: env://MAIL_SMK`, …).
-- **`filesSecret`** — a Secret mounted at `/var/lib/mailnite/conf/secrets`;
+- **`filesSecret`** — a Secret mounted at `/data/conf/secrets`;
   reference its entries from the config by **relative path**:
   `mail.keeper-url: secrets/mailnite.key`.
 

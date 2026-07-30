@@ -12,10 +12,14 @@ kubectl port-forward svc/mail-mailnite 8480:8480   # → http://localhost:8480
 
 ## Layout
 
-One PVC at `/var/lib/mailnite` — the bare-metal installer's exact layout:
-`conf/` (config, at-rest key, console credentials — written by onboarding)
-`data/` (the badger mail store) and `log/` (rotating log files, beside the data
-rather than inside it). `MAIL_CONF_DIR` / `MAIL_DATA_DIR` / `MAIL_LOG_DIR` pin them.
+One PVC mounted at `/data`, and `MAIL_HOME_DIR=/data` makes the volume the
+layout: `conf/` (config, at-rest key, console credentials — written by
+onboarding), `data/` (the badger mail store) and `log/` (rotating log files,
+a sibling of the store rather than a child, so logs can be shipped or dropped
+without touching the mail). Nothing else needs configuring. `MAIL_CONF_DIR` /
+`MAIL_DATA_DIR` / `MAIL_LOG_DIR` override an individual directory when the
+three must live apart — the Linux package's case (`/etc`, `/var/lib`,
+`/var/log`), not a container's.
 
 ## Health probes
 
@@ -33,7 +37,7 @@ Two composable patterns, both optional:
 | Pattern | Values key | How |
 |---|---|---|
 | env | `envFromSecret` | Every config property maps to an env var (`mail.keeper-url` → `MAIL_KEEPER_URL`; the SMK rides `MAIL_SMK` with `mail.keeper-url: env://MAIL_SMK`). Priority: flags > env > config file. |
-| files | `filesSecret` | Mounted read-only at `/var/lib/mailnite/conf/secrets`; reference entries from the config by **relative path** (resolved against the config dir): `mail.keeper-url: secrets/mailnite.key`, `tls.cert-file: secrets/tls.crt`, `relay.cert-file: secrets/client.crt`. |
+| files | `filesSecret` | Mounted read-only at `/data/conf/secrets`; reference entries from the config by **relative path** (resolved against the config dir): `mail.keeper-url: secrets/mailnite.key`, `tls.cert-file: secrets/tls.crt`, `relay.cert-file: secrets/client.crt`. |
 
 ## Mail ports
 

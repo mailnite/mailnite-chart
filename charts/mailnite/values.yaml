@@ -14,8 +14,8 @@ imagePullSecrets: []
 # ONE replica — badger has a single writer. Scaling this up is not supported.
 replicaCount: 1
 
-# All state (config + keys + mail store) under one PersistentVolume, laid out
-# exactly like the bare-metal installer: /var/lib/mailnite/{conf,data}.
+# Config, keys and the mail store on one PersistentVolume mounted at /data.
+# MAIL_HOME_DIR=/data makes the volume the layout: /data/{conf,data,log}.
 persistence:
   enabled: true
   size: 10Gi
@@ -28,7 +28,7 @@ persistence:
 #    with mail.keeper-url: env://MAIL_SMK, …). Put the sensitive ones in a Secret and name it
 #    here; it is attached with envFrom.
 envFromSecret: ""
-# 2) FILES — a Secret mounted read-only at /var/lib/mailnite/conf/secrets.
+# 2) FILES — a Secret mounted read-only at /data/conf/secrets.
 #    Reference its entries from the config by RELATIVE path (resolved against
 #    the config directory), e.g.:  mail.keeper-url: secrets/mailnite.key
 filesSecret: ""
