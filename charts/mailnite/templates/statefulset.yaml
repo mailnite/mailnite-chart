@@ -36,10 +36,12 @@ spec:
             # license/ — one volume holds the server.
             - name: HOME
               value: /var/lib/mailnite
-            - name: MAIL_CONFIG
-              value: /var/lib/mailnite/conf/mailnite.yaml
-            - name: MAILNITE_DATA
-              value: /var/lib/mailnite/data
+            # One root; conf/, data/ and log/ derive from it. The volume below
+            # is mounted at exactly this path, so the layout needs no further
+            # configuration. MAIL_CONF_DIR / MAIL_DATA_DIR / MAIL_LOG_DIR can
+            # override any one of them individually when they must live apart.
+            - name: MAIL_HOME_DIR
+              value: /var/lib/mailnite
             {{- if .Values.timezone }}
             - name: TZ
               value: {{ .Values.timezone | quote }}
