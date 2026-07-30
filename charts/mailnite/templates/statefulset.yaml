@@ -40,6 +40,16 @@ spec:
               value: /data
             - name: MAIL_HOME_DIR
               value: /data
+            # The startup banner prints `kubectl port-forward sts/mailnite …
+            # -n <namespace>`, because the console has no Service in front of
+            # it and a pod IP helps nobody. The pod learns its own name from
+            # the hostname; the namespace it must be told. The projected
+            # service-account file carries it too, but only while the token is
+            # mounted — this survives automountServiceAccountToken: false.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- if .Values.timezone }}
             - name: TZ
               value: {{ .Values.timezone | quote }}
