@@ -7,6 +7,17 @@ spec:
   # ONE replica by design: the embedded badger store has a single writer.
   replicas: {{ .Values.replicaCount }}
   serviceName: {{ include "mailnite.fullname" . }}-hl
+  # OrderedReady (the default) will not roll a pod that is Running but not
+  # Ready — and this pod is deliberately un-Ready until onboarding is finished,
+  # because readiness means "configured and serving mail". The two rules
+  # deadlock: a server still on the wizard can never receive a new image, and
+  # `helm upgrade` reports success because the StatefulSet DID change — the
+  # controller is what declines to act on it.
+  #
+  # Parallel drops that precondition, and costs nothing at one replica: pod
+  # ordering only exists between replicas, and the single-writer rule is held
+  # by the pod NAME (there cannot be two mailnite-0), not by this policy.
+  podManagementPolicy: Parallel
   selector:
     matchLabels: {{- include "mailnite.selectorLabels" . | nindent 6 }}
   template:
