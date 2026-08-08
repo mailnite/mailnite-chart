@@ -30,6 +30,25 @@ store-gated and answers 503 while first-run onboarding is unfinished, so an
 unconfigured pod stays alive but takes no traffic. It is a cluster-internal
 port: never put it in a Service or an Ingress.
 
+## Security and availability defaults
+
+The pod runs as UID/GID 10001 with `RuntimeDefault` seccomp, no service-account
+token, no Linux capabilities and no privilege escalation. Public low ports are
+translated by Services, so the process does not need `NET_BIND_SERVICE`.
+
+A `NetworkPolicy` admits only the configured web ports and, when enabled, mail
+ports. Egress is allow-listed for DNS, HTTP(S), standard SMTP/smarthost ports
+and mailrelay's default control port. Clusters using private S3, OIDC, LDAP or a
+non-standard smarthost must add narrowly scoped rules under
+`networkPolicy.egress.additionalRules`; source selectors can be added under
+`networkPolicy.ingress.from`.
+
+The chart also creates a `PodDisruptionBudget` with `minAvailable: 1`. This
+prevents a voluntary eviction from silently taking down the only stateful
+replica, which also means an intentional drain of its node requires temporarily
+disabling or relaxing the budget. A hostname topology-spread preference is
+included for forward compatibility with an external-store deployment.
+
 ## Secrets
 
 Two composable patterns, both optional:
@@ -52,4 +71,5 @@ helm upgrade mail ./charts/mailnite --reuse-values --set service.mail.enabled=tr
 ## Values
 
 See `values.yaml` — image, persistence (size/class), web/mail Services,
-resources, `extraEnv`, timezone.
+resources, security contexts, network policy, disruption budget, `extraEnv`,
+timezone.

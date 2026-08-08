@@ -68,6 +68,64 @@ resources: {}
   # requests: { cpu: 250m, memory: 512Mi }
   # limits:   { memory: 2Gi }
 
+# Pod and container defaults meet the Kubernetes Restricted profile without
+# granting privileges the high internal listen ports do not need.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+# Restrict ingress to the ports actually published by the chart. Egress is
+# allow-listed for DNS, HTTP(S), SMTP delivery/smarthosts and mailrelay. Add a
+# rule for private S3, OIDC, LDAP or non-standard smarthost endpoints.
+networkPolicy:
+  enabled: true
+  ingress:
+    # Empty means any source may reach the declared web/mail ports. Replace
+    # with namespaceSelector/podSelector/ipBlock entries to narrow callers.
+    from: []
+    additionalRules: []
+  egress:
+    enabled: true
+    # Empty means any destination, but only on the ports below.
+    to: []
+    ports:
+      - { port: 53, protocol: UDP }
+      - { port: 53, protocol: TCP }
+      - { port: 80, protocol: TCP }
+      - { port: 443, protocol: TCP }
+      - { port: 25, protocol: TCP }
+      - { port: 465, protocol: TCP }
+      - { port: 587, protocol: TCP }
+      - { port: 2525, protocol: TCP }
+      - { port: 8443, protocol: TCP }
+      - { port: 8443, protocol: UDP }
+    additionalRules: []
+
+# The single stateful replica cannot be made highly available, so protect it
+# from voluntary eviction. Disable or relax this temporarily when intentionally
+# draining the only node.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: null
+
+# This is immediately useful if a future external-store deployment raises the
+# replica count, and remains scheduling-safe on a one-node installation.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: ScheduleAnyway
+
 podAnnotations: {}
 nodeSelector: {}
 tolerations: []

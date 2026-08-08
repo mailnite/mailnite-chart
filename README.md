@@ -22,6 +22,13 @@ The post-install notes print the full walkthrough: rollout wait, the
 port-forward command, in-cluster addresses, and how to enable the public
 mail-port Service once onboarding is done.
 
+The chart defaults to a non-root Restricted-profile security context, drops all
+Linux capabilities, applies `RuntimeDefault` seccomp, disables service-account
+token mounting, restricts ingress/egress with a `NetworkPolicy`, protects the
+single replica with a `PodDisruptionBudget`, and declares hostname topology
+spreading. See the chart README before draining the only stateful node or when
+adding private/custom-port egress integrations.
+
 ## Secrets
 
 Two composable patterns (see the chart's `values.yaml`):

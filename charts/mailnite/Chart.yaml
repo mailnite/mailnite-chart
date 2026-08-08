@@ -7,7 +7,7 @@ description: >-
   on the :8480 service console (see the install notes) — nothing is
   configured through values that onboarding asks interactively.
 type: application
-version: 0.1.1
+version: 0.1.2
 # The Docker Hub tag format has NO leading v (release.yaml pushes
 # mailnite/mailnite:${VERSION#v}) — "v0.5.11" would pull a nonexistent tag.
 appVersion: "0.5.11"
