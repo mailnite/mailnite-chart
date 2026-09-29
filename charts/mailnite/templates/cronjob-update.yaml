@@ -1,0 +1,60 @@
+{{- if .Values.autoUpdate.enabled }}
+# Hourly `mailnite k8s update` — see autoUpdate in values.yaml. It runs the
+# SAME image as the server (no third-party tool in the path) and its pods carry
+# their own name label, so neither the server's Services nor its NetworkPolicy
+# ever select them.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mailnite.fullname" . }}-update
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.autoUpdate.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0          # the next scheduled run is the retry
+      activeDeadlineSeconds: {{ add .Values.autoUpdate.waitSeconds 300 }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ include "mailnite.name" . }}-updater
+            app.kubernetes.io/instance: {{ .Release.Name }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "mailnite.fullname" . }}-updater
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext: {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: update
+              image: {{ include "mailnite.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+                readOnlyRootFilesystem: true
+              args:
+                - k8s
+                - update
+                - --statefulset={{ include "mailnite.fullname" . }}
+                - --channel={{ .Values.autoUpdate.channel }}
+                - --wait={{ .Values.autoUpdate.waitSeconds }}
+                {{- if .Values.autoUpdate.allowMajor }}
+                - --allow-major
+                {{- end }}
+              env:
+                # The binary's own log file needs a writable home; nothing here
+                # outlives the job.
+                - { name: HOME, value: /tmp }
+                - { name: MAIL_HOME_DIR, value: /tmp/mailnite }
+              resources: {{- toYaml .Values.autoUpdate.resources | nindent 16 }}
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

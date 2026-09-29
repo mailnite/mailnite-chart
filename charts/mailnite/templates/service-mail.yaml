@@ -1,21 +1,43 @@
-{{- if .Values.service.mail.enabled }}
-# The public mail edge: standard ports outside, the server's high internal
-# binds inside (25→2525, …) — keep the "dev" binds on the wizard's Ports step;
-# this Service is the privileged-port translation, so the pod never needs
-# NET_BIND_SERVICE.
+{{- if include "mailnite.mailEdge" . }}
+{{- $ports := include "mailnite.mailPorts" . | fromJsonArray }}
+# The public mail edge — raw TCP, which no HTTP gateway carries: standard ports
+# outside, the server's high binds inside (25→2525 …), so the pod never needs
+# NET_BIND_SERVICE. Point mail.<domain> (the MX target) at this edge's address.
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "mailnite.fullname" . }}-mail
   labels: {{- include "mailnite.labels" . | nindent 4 }}
-  {{- with .Values.service.mail.annotations }}
-  annotations: {{- toYaml . | nindent 4 }}
+  {{- if eq .Values.exposure "loadBalancer" }}
+  {{- with include "mailnite.lbAnnotations" . }}
+  annotations: {{- . | nindent 4 }}
+  {{- end }}
   {{- end }}
 spec:
-  type: {{ .Values.service.mail.type }}
+  {{- if eq .Values.exposure "loadBalancer" }}
+  type: LoadBalancer
+  {{- with .Values.mail.loadBalancer.class }}
+  loadBalancerClass: {{ . }}
+  {{- end }}
+  {{- if and .Values.mail.loadBalancer.ip (ne .Values.platform "aks") }}
+  loadBalancerIP: {{ .Values.mail.loadBalancer.ip }}
+  {{- end }}
+  {{- with .Values.mail.loadBalancer.sourceRanges }}
+  loadBalancerSourceRanges: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- else }}
+  type: NodePort
+  {{- end }}
+  externalTrafficPolicy: {{ .Values.mail.externalTrafficPolicy }}
   selector: {{- include "mailnite.selectorLabels" . | nindent 4 }}
   ports:
-    {{- range .Values.service.mail.ports }}
-    - { name: {{ .name }}, port: {{ .port }}, targetPort: {{ .targetPort }}, protocol: TCP }
+    {{- range $ports }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort }}
+      protocol: TCP
+      {{- if eq $.Values.exposure "nodePort" }}
+      nodePort: {{ .nodePort }}
+      {{- end }}
     {{- end }}
 {{- end }}

@@ -10,18 +10,25 @@ spec:
   ports:
     - { name: console, port: 8480, targetPort: console }
 ---
-# Webmail + the setup console. ClusterIP: the console is reachable ONLY via
-# `kubectl port-forward` (or your ingress for the web ports) — never expose
-# 8480 publicly.
+# Webmail for the cluster: the gateway/ingress backend (plain HTTP — TLS
+# terminates at the edge) and the setup console for `kubectl port-forward`.
+# ClusterIP, always: 8480 must never be published.
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "mailnite.fullname" . }}
   labels: {{- include "mailnite.labels" . | nindent 4 }}
+  {{- if and (eq .Values.platform "gke") .Values.ingress.enabled }}
+  annotations:
+    # GKE Ingress: container-native load balancing, and the BackendConfig
+    # that fixes the health-check path and the request timeout.
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "{{ include "mailnite.fullname" . }}"}'
+  {{- end }}
 spec:
-  type: {{ .Values.service.web.type }}
+  type: ClusterIP
   selector: {{- include "mailnite.selectorLabels" . | nindent 4 }}
   ports:
+    - { name: http,    port: {{ .Values.web.httpPort }},  targetPort: http }
+    - { name: https,   port: {{ .Values.web.httpsPort }}, targetPort: https }
     - { name: console, port: 8480, targetPort: console }
-    - { name: http,    port: {{ .Values.service.web.httpPort }},  targetPort: http }
-    - { name: https,   port: {{ .Values.service.web.httpsPort }}, targetPort: https }

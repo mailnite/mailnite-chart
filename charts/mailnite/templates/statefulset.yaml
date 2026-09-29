@@ -1,3 +1,4 @@
+{{- include "mailnite.validate" . -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -5,7 +6,7 @@ metadata:
   labels: {{- include "mailnite.labels" . | nindent 4 }}
 spec:
   # ONE replica by design: the embedded badger store has a single writer.
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
   serviceName: {{ include "mailnite.fullname" . }}-hl
   # OrderedReady (the default) will not roll a pod that is Running but not
   # Ready — and this pod is deliberately un-Ready until onboarding is finished,
@@ -30,15 +31,30 @@ spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "mailnite.fullname" . }}
+      # No API credentials for the mail server itself. Only the key init
+      # container gets a token (its own projected volume, below).
       automountServiceAccountToken: false
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if .Values.topologySpread.enabled }}
-      topologySpreadConstraints:
-        - maxSkew: {{ .Values.topologySpread.maxSkew }}
-          topologyKey: {{ .Values.topologySpread.topologyKey | quote }}
-          whenUnsatisfiable: {{ .Values.topologySpread.whenUnsatisfiable }}
-          labelSelector:
-            matchLabels: {{- include "mailnite.selectorLabels" . | nindent 14 }}
+      {{- if include "mailnite.mintKeys" . }}
+      initContainers:
+        # Mints the Server Master Key Secret on the first start, verifies it
+        # on every later one, and refuses to mint a second key for a store that
+        # already exists (see `mailnite k8s keys --help`).
+        - name: keys
+          image: {{ include "mailnite.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args: ["k8s", "keys", "--secret", {{ include "mailnite.keysSecret" . | quote }}]
+          env:
+            - { name: HOME, value: /data }
+            - { name: MAIL_HOME_DIR, value: /data }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: kube-api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true }
       {{- end }}
       containers:
         - name: mailnite
@@ -49,26 +65,34 @@ spec:
           env:
             # One volume, mounted at /data, IS the layout: conf/, data/ and
             # log/ all derive from the root below, so a single variable places
-            # the whole server. MAIL_CONF_DIR / MAIL_DATA_DIR / MAIL_LOG_DIR
-            # can override any one of them when they must live apart — which
-            # is the Linux package's case, not a container's.
-            - name: HOME
-              value: /data
-            - name: MAIL_HOME_DIR
-              value: /data
+            # the whole server.
+            - { name: HOME, value: /data }
+            - { name: MAIL_HOME_DIR, value: /data }
             # The startup banner prints `kubectl port-forward sts/mailnite …
-            # -n <namespace>`, because the console has no Service in front of
-            # it and a pod IP helps nobody. The pod learns its own name from
-            # the hostname; the namespace it must be told. The projected
-            # service-account file carries it too, but only while the token is
-            # mounted — this survives automountServiceAccountToken: false.
+            # -n <namespace>`; the pod learns its name from the hostname, the
+            # namespace it must be told (no service-account token is mounted).
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- if .Values.keys.enabled }}
+            # The keeper in a pod is env://MAIL_SMK (the wizard's default).
+            - name: MAIL_SMK
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mailnite.keysSecret" . }}
+                  key: MAIL_SMK
+            # Optional: carries an existing install's password pepper across a
+            # rebuild; absent, the server mints one into its sealed keyring.
+            - name: MAIL_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mailnite.keysSecret" . }}
+                  key: MAIL_PEPPER
+                  optional: true
+            {{- end }}
             {{- if .Values.timezone }}
-            - name: TZ
-              value: {{ .Values.timezone | quote }}
+            - { name: TZ, value: {{ .Values.timezone | quote }} }
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -79,18 +103,18 @@ spec:
                 name: {{ .Values.envFromSecret }}
           {{- end }}
           ports:
-            - { name: console,     containerPort: 8480, protocol: TCP }
-            - { name: health,      containerPort: 9090, protocol: TCP }
-            - { name: http,        containerPort: {{ .Values.service.web.httpPort }},  protocol: TCP }
-            - { name: https,       containerPort: {{ .Values.service.web.httpsPort }}, protocol: TCP }
-            {{- range .Values.service.mail.ports }}
-            - { name: {{ .name }}, containerPort: {{ .targetPort }}, protocol: TCP }
+            - { name: console, containerPort: 8480, protocol: TCP }
+            - { name: health,  containerPort: 9090, protocol: TCP }
+            - { name: http,    containerPort: {{ .Values.web.httpPort }},  protocol: TCP }
+            - { name: https,   containerPort: {{ .Values.web.httpsPort }}, protocol: TCP }
+            {{- range $name := list "smtp" "submissions" "submission" "imaps" "imap" }}
+            {{- $p := index $.Values.mail.ports $name }}
+            - { name: {{ $name | trunc 15 }}, containerPort: {{ $p.targetPort }}, protocol: TCP }
             {{- end }}
           # The dedicated health port (9090) serves the probes in BOTH phases:
           # /healthz answers 200 while the process runs (liveness never gates
-          # on the store), /readyz answers 503 mid-onboarding and while the
-          # store is unavailable — so an unconfigured or storage-less pod is
-          # alive but out of rotation.
+          # on the store), /readyz answers 503 mid-onboarding and 500 while the
+          # store is unavailable — alive but out of rotation.
           livenessProbe:
             httpGet: { path: /healthz, port: health }
             initialDelaySeconds: 5
@@ -103,22 +127,44 @@ spec:
           resources: {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            - name: data
-              mountPath: /data
+            - { name: data, mountPath: /data }
             {{- if .Values.filesSecret }}
-            # Secret files land BESIDE the config; reference them from the
-            # config by relative path, e.g. mail.keeper-url: secrets/mailnite.key
-            - name: secret-files
-              mountPath: /data/conf/secrets
-              readOnly: true
+            # Secret files land BESIDE the config; reference them by relative
+            # path, e.g. tls.cert-file: secrets/tls.crt
+            - { name: secret-files, mountPath: /data/conf/secrets, readOnly: true }
             {{- end }}
-      {{- if .Values.filesSecret }}
+      {{- if or .Values.persistence.existingClaim (not .Values.persistence.enabled) (include "mailnite.mintKeys" .) .Values.filesSecret }}
       volumes:
+        {{- end }}
+        {{- if .Values.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim }}
+        {{- else if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+        {{- if include "mailnite.mintKeys" . }}
+        # The standard service-account projection, mounted ONLY into the key
+        # init container: the mail server's own container has no API token.
+        - name: kube-api
+          projected:
+            sources:
+              - serviceAccountToken: { path: token, expirationSeconds: 3600 }
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{ key: ca.crt, path: ca.crt }]
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: { fieldPath: metadata.namespace }
+        {{- end }}
+        {{- if .Values.filesSecret }}
         - name: secret-files
           secret:
             secretName: {{ .Values.filesSecret }}
             defaultMode: 0400
-      {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -128,7 +174,7 @@ spec:
       {{- with .Values.affinity }}
       affinity: {{- toYaml . | nindent 8 }}
       {{- end }}
-  {{- if .Values.persistence.enabled }}
+  {{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
   volumeClaimTemplates:
     - metadata:
         name: data

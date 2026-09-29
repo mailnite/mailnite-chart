@@ -1,0 +1,56 @@
+{{- if .Values.ingress.enabled }}
+{{- $shared := include "mailnite.sharedHosts" (list .Values.ingress.sharedHosts .) | fromJsonArray }}
+{{- $dedicated := include "mailnite.dedicatedHosts" (list .Values.ingress.dedicatedHosts .) | fromJsonArray }}
+{{- $svc := include "mailnite.fullname" . }}
+{{- $port := .Values.web.httpPort }}
+# The Ingress twin of the HTTPRoutes: /mail on shared hosts, everything on
+# dedicated ones. Plain Prefix paths — mailnite speaks /mail natively.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $shared }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /mail
+            pathType: Prefix
+            backend: { service: { name: {{ $svc }}, port: { number: {{ $port }} } } }
+    {{- end }}
+    {{- range $dedicated }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ $svc }}, port: { number: {{ $port }} } } }
+    {{- end }}
+{{- if eq .Values.platform "gke" }}
+---
+# GKE Ingress: health-check /mail/ (the LB wants a 200; "/" is a 302) and
+# lift the 30 s backend timeout for long downloads.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ $svc }}
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  timeoutSec: {{ .Values.gke.backendTimeoutSec }}
+  healthCheck:
+    type: HTTP
+    requestPath: /mail/
+    port: {{ $port }}
+{{- end }}
+{{- end }}

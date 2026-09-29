@@ -1,0 +1,40 @@
+# AKS — mailnite gets its OWN Azure Standard load balancer IP: the mail ports
+# plus mail.<domain>:443 (webmail, key discovery, its own certificate).
+#
+#   az network public-ip create -g <RG> -n mailnite --sku Standard --allocation-method Static
+#   # <RG> other than the node resource group (MC_…)? Grant the cluster
+#   # identity "Network Contributor" on <RG> and set the annotation below.
+#   # Reverse DNS for that IP (the PTR receivers check):
+#   az network public-ip update -g <RG> -n mailnite --dns-name <label> --reverse-fqdn mail.example.com.
+#
+#   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
+#     -n mail --create-namespace -f aks.yaml
+#
+# OUTBOUND: Azure blocks port 25 egress on most subscription types (not on
+# Enterprise Agreement / MCA-E). Set a smarthost (587/465) in Admin → Mail.
+domain: example.com
+exposure: loadBalancer
+platform: aks
+
+mail:
+  loadBalancer:
+    ip: 203.0.113.25            # placed as azure-load-balancer-ipv4
+    annotations: {}
+      # service.beta.kubernetes.io/azure-load-balancer-resource-group: my-network-rg
+
+persistence:
+  storageClass: managed-csi-premium
+  size: 50Gi
+
+# Optional — webmail ALSO on your site's hostname through the app-routing
+# add-on (ingress-nginx). Its 1 MB default body limit would break mail imports
+# and API attachments; the timeouts cover long downloads.
+# ingress:
+#   enabled: true
+#   className: webapprouting.kubernetes.azure.com
+#   annotations:
+#     nginx.ingress.kubernetes.io/proxy-body-size: 64m
+#     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+#     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+#   tls:
+#     - { secretName: example-com-tls, hosts: [example.com] }

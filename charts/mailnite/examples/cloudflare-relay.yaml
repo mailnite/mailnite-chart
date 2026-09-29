@@ -1,0 +1,21 @@
+# A cluster whose web goes through Cloudflare into a Gateway API gateway, and
+# which cannot take raw TCP from the internet — Cloudflare's proxy carries no
+# SMTP/IMAP, or the one public port 25 already belongs to another server.
+#
+# Mail rides a mailrelay on a small VDS (the wizard's Mail relay step sets it
+# up over SSH; the VDS stores nothing). Webmail answers in two places:
+#   https://<domain>/mail        through Cloudflare + the gateway (this route)
+#   https://mail.<domain>/mail   through the relay (Ports step: Relay for both
+#                                groups — emailed links use this one)
+#
+#   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
+#     -n rel2-mail --create-namespace -f cloudflare-relay.yaml
+#
+# Cloudflare: mail.<domain> must be "DNS only" (grey cloud) → the VDS's IP;
+# rules that add Content-Security-Policy must skip /mail/.
+domain: rel2.com
+exposure: relay
+
+gateway:
+  name: external-https
+  namespace: gateway-infra

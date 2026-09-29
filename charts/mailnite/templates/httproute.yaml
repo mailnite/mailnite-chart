@@ -1,0 +1,86 @@
+{{- if .Values.gateway.name }}
+{{- $shared := include "mailnite.sharedHosts" (list .Values.gateway.sharedHosts .) | fromJsonArray }}
+{{- $dedicated := include "mailnite.dedicatedHosts" (list .Values.gateway.dedicatedHosts .) | fromJsonArray }}
+{{- $parent := dict "group" "gateway.networking.k8s.io" "kind" "Gateway" "name" .Values.gateway.name }}
+{{- with .Values.gateway.namespace }}{{ $_ := set $parent "namespace" . }}{{ end }}
+{{- with .Values.gateway.sectionName }}{{ $_ := set $parent "sectionName" . }}{{ end }}
+{{- if $shared }}
+# Webmail on a hostname SHARED with another site: only /mail and below —
+# the path mailnite natively serves (webmail, /mail/api, /mail/admin,
+# /mail/rpc, /mail/v1, /mail/dav). Gateway API matches the longest prefix, so
+# the site's own "/" route keeps everything else. No rewrites anywhere.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "mailnite.fullname" . }}-mail-path
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - {{- toYaml $parent | nindent 6 }}
+  hostnames: {{- toYaml $shared | nindent 4 }}
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mail }
+      backendRefs:
+        - name: {{ include "mailnite.fullname" . }}
+          port: {{ .Values.web.httpPort }}
+{{- end }}
+{{- if $dedicated }}
+---
+# Hostnames that belong to mailnite ENTIRELY: "/" (redirects to /mail/),
+# /.well-known/* (ACME HTTP-01, MTA-STS, key discovery) and all of /mail.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "mailnite.fullname" . }}-host
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - {{- toYaml $parent | nindent 6 }}
+  hostnames: {{- toYaml $dedicated | nindent 4 }}
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: / }
+      backendRefs:
+        - name: {{ include "mailnite.fullname" . }}
+          port: {{ .Values.web.httpPort }}
+{{- end }}
+{{- if eq .Values.platform "gke" }}
+---
+# GKE's load balancer cuts any request after the backend timeout (default
+# 30 s): long enough for pages, not for a full backup download or a large
+# attachment. Idle WebSockets are unaffected — the server pings every 15 s.
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: {{ include "mailnite.fullname" . }}
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  default:
+    timeoutSec: {{ .Values.gke.backendTimeoutSec }}
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "mailnite.fullname" . }}
+---
+# GKE health-checks "/" and wants a 200; mailnite answers "/" with a 302 to
+# /mail/, which would mark every backend unhealthy. /mail/ is the webmail app
+# itself: 200 whenever the public web server is up.
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: {{ include "mailnite.fullname" . }}
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+spec:
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        portSpecification: USE_SERVING_PORT
+        requestPath: /mail/
+  targetRef:
+    group: ""
+    kind: Service
+    name: {{ include "mailnite.fullname" . }}
+{{- end }}
+{{- end }}

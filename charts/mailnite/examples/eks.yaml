@@ -1,0 +1,25 @@
+# EKS — an internet-facing NLB from the AWS Load Balancer Controller (it must
+# be installed), IP targets with the client address preserved: the mail ports
+# plus mail.<domain>:443.
+#
+# Static addresses are Elastic IPs — ONE PER PUBLIC SUBNET the NLB spans:
+#   aws ec2 allocate-address --domain vpc        # × number of subnets
+#
+#   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
+#     -n mail --create-namespace -f eks.yaml
+#
+# OUTBOUND: AWS throttles port 25 until you request removal (the form wants a
+# reverse DNS record). A smarthost (SES on 587) in Admin → Mail is simplest.
+domain: example.com
+exposure: loadBalancer
+platform: eks
+
+mail:
+  loadBalancer:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-eip-allocations: eipalloc-0aaaaaaaaaaaaaaaa,eipalloc-0bbbbbbbbbbbbbbbb
+      service.beta.kubernetes.io/aws-load-balancer-subnets: subnet-0aaaaaaaaaaaaaaaa,subnet-0bbbbbbbbbbbbbbbb
+
+persistence:
+  storageClass: gp3
+  size: 50Gi

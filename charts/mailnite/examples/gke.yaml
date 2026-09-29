@@ -1,0 +1,32 @@
+# GKE (Standard or Autopilot) — mailnite gets its OWN public IP from a
+# passthrough L4 load balancer: the mail ports plus mail.<domain>:443, where it
+# serves webmail (https://mail.<domain>/mail), key discovery and its own Let's
+# Encrypt certificate. No mailrelay, no gateway required.
+#
+#   gcloud compute addresses create mailnite --region <REGION>          # REGIONAL, not global
+#   gcloud compute addresses describe mailnite --region <REGION> --format='value(address)'
+#
+#   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
+#     -n mail --create-namespace -f gke.yaml
+#
+# OUTBOUND: GKE blocks port 25 egress. Set a smarthost (a relay service on
+# 587/465) in Admin → Mail, or delivery to other servers times out.
+# Firewall: GKE opens the load balancer's ports itself; nothing to add.
+domain: example.com
+exposure: loadBalancer
+platform: gke
+
+mail:
+  loadBalancer:
+    ip: 203.0.113.25            # the regional static address reserved above
+
+persistence:
+  storageClass: premium-rwo     # SSD persistent disk; standard-rwo = balanced
+  size: 50Gi
+
+# Optional — webmail ALSO on your site's hostname (https://example.com/mail)
+# through a GKE Gateway you already run. The chart adds the GCPBackendPolicy
+# (long downloads) and HealthCheckPolicy (/mail/ answers 200; "/" is a 302).
+# gateway:
+#   name: external-http         # class gke-l7-global-external-managed
+#   namespace: default

@@ -1,52 +1,127 @@
-{{ include "mailnite.fullname" . }} is starting in namespace {{ .Release.Namespace }}.
+{{- $ns := .Release.Namespace -}}
+{{- $name := include "mailnite.fullname" . -}}
+{{- $domain := .Values.domain | default "<your-domain>" -}}
+{{- $shared := include "mailnite.sharedHosts" (list .Values.gateway.sharedHosts .) | fromJsonArray -}}
+{{- $dedicated := include "mailnite.dedicatedHosts" (list .Values.gateway.dedicatedHosts .) | fromJsonArray -}}
+{{- $ports := include "mailnite.mailPorts" . | fromJsonArray -}}
+{{- $viaGateway := and .Values.gateway.name (or $shared $dedicated) -}}
+{{- $webRouted := or $viaGateway .Values.ingress.enabled -}}
+Mailnite {{ include "mailnite.tag" . }} — namespace {{ $ns }}, exposure={{ .Values.exposure }}, platform={{ .Values.platform }}
 
 ┌─────────────────────────────────────────────────────────────────────┐
 │   FINISH THE INSTALLATION IN YOUR BROWSER — SERVICE CONSOLE :8480   │
 └─────────────────────────────────────────────────────────────────────┘
 
-1) Wait for the pod to START — not to become Ready:
+1) Wait for the pod to START — not to become Ready (a fresh install stays
+   0/1 until the wizard's first phase is done; that is by design):
 
-     kubectl -n {{ .Release.Namespace }} wait --for=jsonpath='{.status.phase}'=Running pod/{{ include "mailnite.fullname" . }}-0 --timeout=120s
+     kubectl -n {{ $ns }} wait --for=jsonpath='{.status.phase}'=Running pod/{{ $name }}-0 --timeout=180s
+{{- if include "mailnite.mintKeys" . }}
 
-   A fresh install stays 0/1 Ready on purpose: readiness means "configured
-   and serving mail", and nothing is configured until you finish step 2.
-   `rollout status` waits for Ready, so it would sit here until it times out.
+   Its first start mints the Server Master Key into Secret {{ include "mailnite.keysSecret" . }}.
+   BACK IT UP OFF THIS CLUSTER — without it nobody can open the mailboxes:
 
-2) Forward the setup console to your machine and open it:
-
-     kubectl -n {{ .Release.Namespace }} port-forward statefulset/{{ include "mailnite.fullname" . }} 8480:8480
-
-   The forward names the StatefulSet — the same object you waited for above —
-   so it lands on that pod with no Service selector in between.
-
-     →  http://localhost:8480
-
-   First run walks you through everything: console password → storage →
-   admin account → infrastructure (domains, DNS, webmail, TLS, ports).
-   On the wizard's last step, KEEP the service panel — on Kubernetes,
-   port-forward to 8480 is the natural admin path.
-
-   Two Ports-step notes for Kubernetes:
-     • keep the HIGH internal binds (2525/2465/2587/2993) — the chart's mail
-       Service maps the standard ports onto them at the edge;
-     • enable the mail Service when ready:
-         helm upgrade {{ .Release.Name }} <chart> --reuse-values --set service.mail.enabled=true
-
-In-cluster addresses:
-
-     webmail   {{ include "mailnite.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.web.httpPort }}  (HTTP)  /  :{{ .Values.service.web.httpsPort }} (HTTPS)
-     console   {{ include "mailnite.fullname" . }}.{{ .Release.Namespace }}.svc:8480   (cluster-private — port-forward only)
-     pod IP    kubectl -n {{ .Release.Namespace }} get pod {{ include "mailnite.fullname" . }}-0 -o jsonpath='{.status.podIP}'
-
-{{- if .Values.service.mail.enabled }}
-
-Mail edge (Service {{ include "mailnite.fullname" . }}-mail, type {{ .Values.service.mail.type }}):
-
-     kubectl -n {{ .Release.Namespace }} get svc {{ include "mailnite.fullname" . }}-mail
-     # point your MX / A records at its EXTERNAL-IP
+     kubectl -n {{ $ns }} get secret {{ include "mailnite.keysSecret" . }} -o jsonpath='{.data.MAIL_SMK}' | base64 -d
 {{- end }}
 
-Secrets (optional, see values.yaml):
-     envFromSecret — properties as env vars (mail.keeper-url → MAIL_KEEPER_URL; the SMK rides MAIL_SMK with keeper env://MAIL_SMK, …)
-     filesSecret   — mounted at /data/conf/secrets; reference from the
-                     config by RELATIVE path, e.g. mail.keeper-url: secrets/mailnite.key
+2) Open the setup console:
+
+     kubectl -n {{ $ns }} port-forward statefulset/{{ $name }} 8480:8480
+     →  http://localhost:8480/mail/
+
+   Enter {{ $domain }} as the mail domain. On the Ports step keep the HIGH
+   binds (mail 2525/2465/2587/2993/2143, web 8080/8443): the chart's edge
+   maps the standard ports onto them.
+
+3) Put it on the internet —
+{{- if eq .Values.exposure "loadBalancer" }} LoadBalancer
+
+     kubectl -n {{ $ns }} get svc {{ $name }}-mail -w      # wait for EXTERNAL-IP
+
+   DNS (the wizard's DNS step lists the rest — SPF, DKIM, DMARC, MTA-STS):
+
+     mail.{{ $domain }}.   A    <EXTERNAL-IP>{{ with .Values.mail.loadBalancer.ip }}  ({{ . }}){{ end }}
+     {{ $domain }}.        MX   10 mail.{{ $domain }}.
+
+   Ports step: every group "Direct" — this load balancer IS the edge.
+{{- if not .Values.mail.loadBalancer.ip }}
+   ! No static IP: the address changes if the Service is ever recreated, and
+     MX, PTR and reputation hang off it. Reserve one: mail.loadBalancer.ip.
+{{- end }}
+{{- if has .Values.platform (list "gke" "aks" "eks") }}
+
+   OUTBOUND MAIL: {{ get (dict "gke" "GKE blocks port 25 egress — always" "aks" "Azure blocks port 25 egress on most subscription types (not EA / MCA-E)" "eks" "AWS throttles port 25 until you request its removal") .Values.platform }}.
+   Set a smarthost in Admin → Mail (a relay service on 587/465 — SES,
+   SendGrid, Mailgun, Postmark …) or delivery to other servers times out.
+   Receiving is unaffected.
+{{- end }}
+{{- else if eq .Values.exposure "nodePort" }} NodePort (router forwarding)
+
+   Forward these public ports on the router/firewall to any node:
+{{- range $ports }}
+     {{ printf "%-5v" .port }} → node:{{ .nodePort }}   ({{ .name }})
+{{- end }}
+
+   DNS: mail.{{ $domain }} A <the router's public IP>; {{ $domain }} MX 10 mail.{{ $domain }}.
+   Ask the ISP for a PTR record: that IP → mail.{{ $domain }}.
+{{- else if eq .Values.exposure "relay" }} through a mailrelay
+
+   Nothing here listens publicly: the server dials OUT to a mailrelay on a
+   small VDS that owns the public IP (it stores no mail and no keys).
+
+   • Wizard → Mail relay → Automatic: give it the VDS's SSH login. It installs
+     the relay, pairs it (mTLS) and keeps it auto-updated.
+   • DNS: mail.{{ $domain }} A <the VDS's IP>, MX 10 mail.{{ $domain }}. On Cloudflare make
+     that record "DNS only" — the proxy carries no SMTP/IMAP.
+   • Ports step: choose Relay for BOTH groups. Emailed links (password resets
+     …) point at https://mail.{{ $domain }}/mail, which only the relay can serve.
+{{- if $webRouted }}
+     The gateway routes below keep working alongside: in a pod the server
+     answers the tunnel and the cluster at once.
+{{- else }}
+     With no gateway set, the relay is also how browsers reach webmail.
+{{- end }}
+   • Set the VDS's reverse DNS (PTR) to mail.{{ $domain }}: outbound mail leaves
+     from its IP.
+{{- else }} not yet (exposure=none)
+
+   Nothing is exposed. When the wizard is done, pick how the internet reaches
+   this cluster and upgrade:
+
+     helm upgrade {{ .Release.Name }} <chart> -n {{ $ns }} --reuse-values --set exposure=<mode>
+
+       loadBalancer   its own public IP (GKE, AKS, EKS, MetalLB, k3s)
+       relay          behind Cloudflare or a NAT — through a mailrelay VDS
+       nodePort       a router forwards the ports to fixed node ports
+{{- end }}
+{{- if $viaGateway }}
+
+4) Webmail through Gateway {{ .Values.gateway.namespace | default $ns }}/{{ .Values.gateway.name }}:
+{{- range $shared }}
+     https://{{ . }}/mail
+{{- end }}
+{{- range $dedicated }}
+     https://{{ . }}/
+{{- end }}
+
+   Behind a gateway, tell the server whom to trust for the client address:
+   Admin → Security → Reverse proxy (the gateway's addresses; provider
+   Cloudflare when it sits in front). Otherwise rate limits and the login log
+   see ONE client — the gateway.
+   Cloudflare: rules that add Content-Security-Policy must skip /mail/.
+{{- end }}
+{{- if .Values.ingress.enabled }}
+
+4) Webmail through Ingress {{ $name }}{{ with .Values.ingress.className }} (class {{ . }}){{ end }} — same trust note:
+   Admin → Security → Reverse proxy.
+{{- end }}
+
+Updates: {{ if .Values.autoUpdate.enabled -}}
+hourly, CronJob {{ $name }}-update follows {{ .Values.autoUpdate.channel }}
+         (forward only, image checked first, rolled back if it does not get Ready).
+         kubectl -n {{ $ns }} get cronjob {{ $name }}-update
+{{- else -}}
+automatic updates OFF — pinned to {{ include "mailnite.tag" . }}.
+{{- end }}
+Storage: {{ if .Values.persistence.existingClaim }}claim {{ .Values.persistence.existingClaim }}{{ else if .Values.persistence.enabled }}claim data-{{ $name }}-0 ({{ .Values.persistence.size }}, class {{ .Values.persistence.storageClass | default "<cluster default>" }}){{ else }}EPHEMERAL (persistence.enabled=false) — every restart loses the mail{{ end }}.
+         Deleting the NAMESPACE deletes the claim; with reclaimPolicy Delete, every mailbox.

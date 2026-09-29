@@ -1,0 +1,74 @@
+# The server's own identity. Its container mounts no token; the key init
+# container alone gets one (projected), for the Role below.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "mailnite.fullname" . }}
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+{{- if include "mailnite.mintKeys" . }}
+---
+# `mailnite k8s keys`: read the key Secret, create it once. Create cannot be
+# limited by name (the object does not exist yet); reads can.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "mailnite.fullname" . }}-keys
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ include "mailnite.keysSecret" . | quote }}]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mailnite.fullname" . }}-keys
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mailnite.fullname" . }}-keys
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mailnite.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.autoUpdate.enabled }}
+---
+# The updater may read and patch exactly one object: this StatefulSet.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "mailnite.fullname" . }}-updater
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "mailnite.fullname" . }}-updater
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    resourceNames: [{{ include "mailnite.fullname" . | quote }}]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mailnite.fullname" . }}-updater
+  labels: {{- include "mailnite.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mailnite.fullname" . }}-updater
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mailnite.fullname" . }}-updater
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,26 @@
+# Bare metal behind a router with a static public IP (the mailnite.com shape):
+# the router forwards the mail ports to FIXED node ports, and its single 443
+# already goes to the cluster's gateway — which therefore serves
+# mail.<domain> (every path) and <domain>/mail.
+#
+#   router:  25→30025  465→30465  587→30587  993→30993  143→30143
+#
+#   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
+#     -n mail --create-namespace -f router-nodeport.yaml
+#
+# Certificates: the gateway terminates 443, so TLS-ALPN-01 cannot reach the
+# server — pick HTTP-01 (or DNS-01) on the wizard's TLS step.
+#
+# One public IP has ONE port 25: a second mail server behind the same router
+# cannot use this shape (and its node ports would collide — the API server
+# refuses with "provided port is already allocated"). Give it exposure=relay.
+domain: example.com
+exposure: nodePort
+
+mail:
+  ports:
+    https: { enabled: false }   # 443 belongs to the gateway here
+
+gateway:
+  name: external-https
+  namespace: gateway-infra

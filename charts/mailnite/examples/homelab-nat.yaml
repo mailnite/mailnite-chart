@@ -1,0 +1,14 @@
+# A home lab behind NAT — no inbound port at all, no gateway reachable from
+# the internet. Everything public rides a mailrelay on a small VDS: mail AND
+# webmail (choose Relay for both groups on the wizard's Ports step), with the
+# server's own Let's Encrypt certificate for mail.<domain>. The server dials
+# OUT, so the router needs no port-forward.
+#
+#   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
+#     -n mail --create-namespace -f homelab-nat.yaml
+domain: example.org
+exposure: relay
+
+persistence:
+  storageClass: local-path      # k3s' default; use your cluster's
+  size: 50Gi

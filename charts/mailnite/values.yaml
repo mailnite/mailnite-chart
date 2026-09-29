@@ -1,75 +1,210 @@
-# Mailnite single-node (embedded badger) — the simple stateful install.
-# The cluster mode (consensusdb) is deliberately NOT this chart.
+# Mailnite — the single-node mail server (embedded badger store on one volume).
+#
+# THREE values decide an install; everything else has a working default:
+#
+#   domain    your mail domain — mail.<domain> becomes the mail host
+#   exposure  how the internet reaches the server (none | loadBalancer | nodePort | relay)
+#   gateway   where browsers find webmail through your Gateway API gateway (optional)
+#
+# Ready-made values for each environment live in examples/: gke, aks, eks,
+# cloudflare-relay (a cluster behind Cloudflare), homelab-nat, router-nodeport.
+# Setup always FINISHES in the browser (the :8480 console, port-forward) — the
+# chart builds the infrastructure, the wizard configures the mail server.
+
+# The mail domain, e.g. example.com. mail.<domain> is the MX target, the
+# SMTP/IMAP certificate name, the key-discovery authority and the host every
+# emailed link names. Enter the SAME domain in the setup wizard.
+domain: ""
+
+# How the internet reaches this server — pick the one your cluster can do:
+#
+#   none          Nothing public (default): setup and evaluation over
+#                 `kubectl port-forward`. An install never exposes a port, or
+#                 creates a paid cloud load balancer, by surprise.
+#   loadBalancer  The cluster can give mailnite its OWN public IP — GKE, AKS,
+#                 EKS, MetalLB, k3s ServiceLB. One L4 LoadBalancer carries the
+#                 mail ports and mail.<domain>:443 (key discovery, certificates,
+#                 webmail on the server's own certificate). No mailrelay.
+#   nodePort      A router or cloud firewall forwards the public ports to
+#                 FIXED node ports (bare metal with the public IP on a router).
+#   relay         The cluster cannot take raw TCP from the internet: it is behind
+#                 Cloudflare, a NAT, a home router. mailnite dials OUT to a
+#                 mailrelay on a small VDS that owns the public IP; the wizard's
+#                 "Mail relay" step installs and pairs it over SSH. The VDS stores
+#                 no mail and no keys — losing it loses nothing.
+exposure: none
+
+# Where the cluster runs. Adds what that platform needs so you don't have to:
+#   generic  nothing extra
+#   gke      L4 load balancer on backend services, static-IP placement, and for
+#            the gateway: a GCPBackendPolicy (long requests) + HealthCheckPolicy
+#            (the LB's health check needs a 200 — "/" answers 302)
+#   aks      static-IP annotation for the Azure load balancer
+#   eks      AWS Load Balancer Controller NLB with client-IP preservation
+#            (needs the controller; static IPs are Elastic IP allocations — see
+#            examples/eks.yaml)
+platform: generic
+
+# platform=gke, with a gateway or ingress: the L7 load balancer's backend
+# timeout. Idle WebSockets survive GKE's 30 s default (the server pings every
+# 15 s), but a long download (full backup, big attachment) would be cut.
+gke:
+  backendTimeoutSec: 3600
 
 image:
-  # The image the release pipeline actually publishes (alpine-based, WITH
-  # ca-certificates — outbound TLS verification needs the CA trust store).
-  # A custom image must install ca-certificates too, or every remote
-  # certificate verifies as "unknown authority".
+  # The image the release pipeline publishes (alpine, ca-certificates
+  # included — outbound TLS verification needs the trust store).
   repository: mailnite/mailnite
-  tag: ""              # empty = the chart's appVersion
+  tag: ""              # "" = the chart's appVersion (or newer, see autoUpdate)
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
-# ONE replica — badger has a single writer. Scaling this up is not supported.
-replicaCount: 1
-
-# Resources are named `mailnite` regardless of the release name, so the names
-# in the notes, the docs and your runbooks stay true: statefulset/mailnite,
-# svc/mailnite, svc/mailnite-mail. The cost is that two releases cannot share
-# a namespace — give a second install its own, or rename it here.
+# Resources are named after the CHART, not the release (statefulset/mailnite,
+# svc/mailnite, svc/mailnite-mail), so notes, docs and runbooks stay true. Two
+# installs therefore need two namespaces — the right shape anyway: one mail
+# server is one identity over one volume.
 fullnameOverride: ""
 
-# Config, keys and the mail store on one PersistentVolume mounted at /data.
-# MAIL_HOME_DIR=/data makes the volume the layout: /data/{conf,data,log}.
+# --- the mail edge (exposure = loadBalancer | nodePort) -----------------------
+mail:
+  # Public port → the server's in-pod bind. KEEP the wizard's high defaults on
+  # its Ports step: the Service translates at the edge, so the pod needs no
+  # NET_BIND_SERVICE. nodePort is used with exposure=nodePort only.
+  ports:
+    smtp:        { enabled: true, port: 25,  targetPort: 2525, nodePort: 30025 }
+    submissions: { enabled: true, port: 465, targetPort: 2465, nodePort: 30465 }
+    submission:  { enabled: true, port: 587, targetPort: 2587, nodePort: 30587 }
+    imaps:       { enabled: true, port: 993, targetPort: 2993, nodePort: 30993 }
+    imap:        { enabled: true, port: 143, targetPort: 2143, nodePort: 30143 }
+    # mail.<domain>:443 on the server's OWN certificate: key discovery
+    # (MailKey), TLS-ALPN-01 issuance, MTA-STS and webmail. Keep it unless your
+    # gateway answers mail.<domain>:443 instead (a router whose single 443
+    # already goes to the gateway — see examples/router-nodeport.yaml). Port 80
+    # is deliberately absent: the pod's HTTP port is plain webmail with no
+    # redirect, and certificates need only 443.
+    https:       { enabled: true, port: 443, targetPort: 8443, nodePort: 30443 }
+  # Local keeps the REAL client IP. SPF, DNSBL screening, rate limits and the
+  # login log are meaningless against a node's address. (On a multi-node
+  # cluster the load balancer health-checks nodes, so traffic lands only where
+  # the pod runs.) Change it only if you know your LB preserves the source.
+  externalTrafficPolicy: Local
+  loadBalancer:
+    # A reserved STATIC public IP — strongly recommended: MX and A records, the
+    # PTR and the address's reputation all hang off it. GKE: a REGIONAL
+    # external address; AKS: a Standard public IP (the cluster identity needs
+    # Network Contributor on its resource group); EKS: Elastic IP allocations
+    # via annotation instead (examples/eks.yaml).
+    ip: ""
+    # Merged over the platform's defaults (yours win).
+    annotations: {}
+    class: ""          # loadBalancerClass, when the cluster runs several
+    # Leave empty: the whole internet delivers mail to port 25.
+    sourceRanges: []
+
+# --- webmail through your own HTTP edge ----------------------------------------
+web:
+  # In-pod binds: plain HTTP behind a gateway/ingress (TLS terminates there),
+  # and HTTPS on the server's own certificate (mail.<domain>:443).
+  httpPort: 8080
+  httpsPort: 8443
+
+# Route webmail through an existing Gateway API Gateway — the mailnite.com
+# shape: your site keeps "/", mailnite natively serves /mail (API and admin
+# included; no rewrites). Setting name turns it on.
+gateway:
+  name: ""             # e.g. external-https
+  namespace: ""        # e.g. gateway-infra   ("" = this release's namespace)
+  sectionName: ""      # a specific listener, when the Gateway has several
+  # Hostnames SHARED with another site: only /mail (and below) is routed.
+  # Default: [<domain>] — webmail at https://<domain>/mail.
+  sharedHosts: []
+  # Hostnames routed ENTIRELY to mailnite ("/", /mail, /.well-known/…).
+  # Default: [mail.<domain>] with exposure=nodePort (behind a router whose
+  # 443 goes to the gateway, the gateway is what answers mail.<domain>);
+  # otherwise none — with loadBalancer or relay, mail.<domain> resolves to
+  # the LB or the VDS, which serve it themselves.
+  dedicatedHosts: []
+
+# The classic-Ingress twin of gateway above. Mind your controller's body-size
+# limit: ingress-nginx defaults to 1 MB, which breaks mail imports and API
+# attachments (examples/aks.yaml sets it).
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  sharedHosts: []      # default: [<domain>]  (only /mail)
+  dedicatedHosts: []   # default: as gateway.dedicatedHosts
+  tls: []              # [{ secretName: example-com-tls, hosts: [example.com] }]
+
+# --- the Server Master Key ----------------------------------------------------
+# MAIL_SMK unseals the mail store: lose it and nobody can open the mailboxes,
+# ever. In a pod the server reads it from the environment (env://MAIL_SMK).
+keys:
+  # true: the chart supplies MAIL_SMK. false: you supply it yourself
+  # (envFromSecret/extraEnv), or chose another keeper in the wizard.
+  enabled: true
+  # "" (default): an init container (`mailnite k8s keys`) creates the Secret
+  # <fullname>-keys on the FIRST start — 32 random bytes minted inside the
+  # cluster, never passing through Helm values, release history, CI or git —
+  # and on every later start only verifies it. If the store already exists but
+  # the Secret is gone, it refuses to mint a new key (which could never open
+  # the store) and the pod waits in Init with the restore command in its log.
+  # The Secret is NOT a Helm object: `helm uninstall` keeps it.
+  #
+  # Or bring your own (the CI / GitOps way):
+  #   kubectl -n <ns> create secret generic mailnite-keys \
+  #     --from-literal=MAIL_SMK="$(openssl rand -base64 32)"
+  existingSecret: ""
+
+# --- automatic updates ----------------------------------------------------------
+# The Kubernetes twin of the Linux installer's hourly timer: a CronJob
+# (`mailnite k8s update`) compares the stable channel with the running image
+# and moves the StatefulSet forward — only after the new tag is published,
+# never down, never across a MAJOR version unless allowMajor. A server that
+# was Ready must be Ready again within waitSeconds or the old image returns and
+# that version is skipped. `helm upgrade` never rolls an auto-updated server
+# back to an older chart default. Pin a version: enabled=false + image.tag.
+autoUpdate:
+  enabled: true
+  schedule: "23 * * * *"
+  channel: https://get.mailnite.com
+  allowMajor: false
+  waitSeconds: 600
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+# --- storage --------------------------------------------------------------------
+# Config, keys and the mail store on ONE volume at /data (MAIL_HOME_DIR=/data
+# makes it the layout: /data/{conf,data,log}).
 persistence:
   enabled: true
-  size: 10Gi
-  storageClass: ""     # "" = the cluster default
+  size: 20Gi
+  storageClass: ""     # "" = the cluster default. MIND its reclaimPolicy: with
+                       # Delete, deleting the NAMESPACE deletes every mailbox.
   accessModes: [ReadWriteOnce]
+  # Adopt an existing claim (a restore, a migration) instead of creating one.
+  existingClaim: ""
 
-# --- secrets: two patterns, both optional -----------------------------------
-# 1) ENV — every config property maps to an env var generically
-#    (mail.keeper-url → MAIL_KEEPER_URL; the SMK rides MAIL_SMK
-#    with mail.keeper-url: env://MAIL_SMK, …). Put the sensitive ones in a Secret and name it
-#    here; it is attached with envFrom.
-envFromSecret: ""
-# 2) FILES — a Secret mounted read-only at /data/conf/secrets.
-#    Reference its entries from the config by RELATIVE path (resolved against
-#    the config directory), e.g.:  mail.keeper-url: secrets/mailnite.key
+# --- secrets & env (optional) ---------------------------------------------------
+# Every config property maps to an env var (mail.keeper-url → MAIL_KEEPER_URL),
+# and env OUTRANKS the settings file at boot — so never set here what the
+# admin console manages (the console's own saves would be shadowed after the
+# next restart). Keep these for things the console does not own.
+envFromSecret: ""      # a Secret attached with envFrom
+# A Secret mounted read-only at /data/conf/secrets; reference its entries from
+# the config by RELATIVE path, e.g. tls.cert-file: secrets/tls.crt
 filesSecret: ""
+extraEnv: []           # [{ name: TZ, value: Europe/Amsterdam }]
+timezone: ""           # shorthand for TZ
 
-# Extra literal env vars: [{ name: MAIL_DOMAIN, value: example.com }]
-extraEnv: []
-
-service:
-  # Webmail (HTTP/HTTPS). ClusterIP by default — front it with your ingress or
-  # switch the type. The setup console (8480) also rides this service so
-  # `kubectl port-forward svc/…` works, but ClusterIP keeps it cluster-private.
-  web:
-    type: ClusterIP
-    httpPort: 8080
-    httpsPort: 8443
-  # Mail protocols. Off by default; enable once onboarding is done. The
-  # standard public ports map onto the server's high internal binds — KEEP the
-  # high "dev" binds on the wizard's Ports step, this Service does the 25→2525
-  # translation at the edge (no NET_BIND_SERVICE needed in the pod).
-  mail:
-    enabled: false
-    type: LoadBalancer
-    annotations: {}
-    ports:
-      - { name: smtp,        port: 25,  targetPort: 2525 }
-      - { name: submissions, port: 465, targetPort: 2465 }
-      - { name: submission,  port: 587, targetPort: 2587 }
-      - { name: imaps,       port: 993, targetPort: 2993 }
+# ONE replica — badger has a single writer. The chart refuses anything else.
+replicaCount: 1
 
 resources: {}
   # requests: { cpu: 250m, memory: 512Mi }
   # limits:   { memory: 2Gi }
 
-# Pod and container defaults meet the Kubernetes Restricted profile without
-# granting privileges the high internal listen ports do not need.
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 10001
@@ -83,20 +218,20 @@ containerSecurityContext:
   capabilities:
     drop: [ALL]
 
-# Restrict ingress to the ports actually published by the chart. Egress is
-# allow-listed for DNS, HTTP(S), SMTP delivery/smarthosts and mailrelay. Add a
-# rule for private S3, OIDC, LDAP or non-standard smarthost endpoints.
+# Ingress is limited to the ports the chart publishes; egress to DNS, HTTP(S),
+# SMTP delivery and smarthosts, the Kubernetes API (the key init container)
+# and — with exposure=relay — SSH + the relay's control port. Add rules for
+# private S3, OIDC, LDAP or non-standard smarthost endpoints.
 networkPolicy:
   enabled: true
   ingress:
-    # Empty means any source may reach the declared web/mail ports. Replace
-    # with namespaceSelector/podSelector/ipBlock entries to narrow callers.
+    # Empty = any source may reach the declared ports. Narrow with
+    # namespaceSelector/podSelector/ipBlock entries if you like.
     from: []
     additionalRules: []
   egress:
     enabled: true
-    # Empty means any destination, but only on the ports below.
-    to: []
+    to: []             # empty = any destination, on the ports below
     ports:
       - { port: 53, protocol: UDP }
       - { port: 53, protocol: TCP }
@@ -106,28 +241,24 @@ networkPolicy:
       - { port: 465, protocol: TCP }
       - { port: 587, protocol: TCP }
       - { port: 2525, protocol: TCP }
+    # The API server's own port where it is not 443 (kubeadm: 6443).
+    apiServerPorts: [443, 6443]
+    # exposure=relay: SSH for the wizard's automatic VDS setup, and the relay's
+    # control port (TCP; UDP for the QUIC transport). Match a changed port.
+    relayPorts:
+      - { port: 22, protocol: TCP }
       - { port: 8443, protocol: TCP }
       - { port: 8443, protocol: UDP }
     additionalRules: []
 
-# The single stateful replica cannot be made highly available, so protect it
-# from voluntary eviction. Disable or relax this temporarily when intentionally
-# draining the only node.
+# The only replica cannot be highly available; don't let a voluntary eviction
+# take it down silently. Relax it temporarily to drain its node.
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
   maxUnavailable: null
 
-# This is immediately useful if a future external-store deployment raises the
-# replica count, and remains scheduling-safe on a one-node installation.
-topologySpread:
-  enabled: true
-  maxSkew: 1
-  topologyKey: kubernetes.io/hostname
-  whenUnsatisfiable: ScheduleAnyway
-
 podAnnotations: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
-timezone: ""           # e.g. Europe/Amsterdam → TZ env

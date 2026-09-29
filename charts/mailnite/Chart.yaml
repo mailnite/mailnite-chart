@@ -1,17 +1,21 @@
 apiVersion: v2
 name: mailnite
 description: >-
-  Mailnite — the complete self-hosted mail server in one binary. This chart
-  installs the simple single-node deployment: one stateful replica with the
-  embedded badger store on a PersistentVolume. Setup finishes in the BROWSER
-  on the :8480 service console (see the install notes) — nothing is
-  configured through values that onboarding asks interactively.
+  Mailnite — the complete self-hosted mail server in one binary. One stateful
+  replica with the embedded badger store on a PersistentVolume, reachable from
+  the internet the way your cluster can: its own cloud load balancer, router
+  port-forwards, or a mailrelay VDS when the cluster sits behind Cloudflare or
+  NAT; webmail optionally through your Gateway API gateway or Ingress. Setup
+  finishes in the BROWSER on the :8480 console (see the install notes).
 type: application
-version: 0.1.2
+version: 0.2.0
 # The Docker Hub tag format has NO leading v (release.yaml pushes
-# mailnite/mailnite:${VERSION#v}) — "v0.5.11" would pull a nonexistent tag.
-appVersion: "0.5.11"
-keywords: [mail, smtp, imap, webmail, self-hosted]
+# mailnite/mailnite:${VERSION#v}). 1.4.9 is the first release with the
+# `mailnite k8s keys|update` commands this chart runs.
+appVersion: "1.4.9"
+kubeVersion: ">=1.26.0-0"
+keywords: [mail, smtp, imap, webmail, self-hosted, gateway-api]
 home: https://mailnite.com
 sources:
+  - https://github.com/mailnite/mailnite-chart
   - https://github.com/mailnite/mailnite-dist

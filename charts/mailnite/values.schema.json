@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "mailnite chart values",
+  "type": "object",
+  "additionalProperties": false,
+  "definitions": {
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "hostList": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^(\\*\\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$" }
+    },
+    "mailPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "port", "targetPort", "nodePort"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "port": { "$ref": "#/definitions/port" },
+        "targetPort": { "$ref": "#/definitions/port" },
+        "nodePort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "stringMap": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "properties": {
+    "global": { "type": "object" },
+    "domain": {
+      "type": "string",
+      "description": "The mail domain; mail.<domain> is the mail host.",
+      "pattern": "^$|^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+    },
+    "exposure": {
+      "type": "string",
+      "description": "How the internet reaches the server.",
+      "enum": ["none", "loadBalancer", "nodePort", "relay"]
+    },
+    "platform": { "type": "string", "enum": ["generic", "gke", "aks", "eks"] },
+    "gke": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "backendTimeoutSec": { "type": "integer", "minimum": 1, "maximum": 86400 } }
+    },
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": ["string", "number"] },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "imagePullSecrets": { "type": "array" },
+    "mail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "smtp": { "$ref": "#/definitions/mailPort" },
+            "submissions": { "$ref": "#/definitions/mailPort" },
+            "submission": { "$ref": "#/definitions/mailPort" },
+            "imaps": { "$ref": "#/definitions/mailPort" },
+            "imap": { "$ref": "#/definitions/mailPort" },
+            "https": { "$ref": "#/definitions/mailPort" }
+          }
+        },
+        "externalTrafficPolicy": { "type": "string", "enum": ["Local", "Cluster"] },
+        "loadBalancer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip": { "type": "string", "pattern": "^$|^[0-9a-fA-F:.]+$" },
+            "annotations": { "$ref": "#/definitions/stringMap" },
+            "class": { "type": "string" },
+            "sourceRanges": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "web": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "httpPort": { "$ref": "#/definitions/port" },
+        "httpsPort": { "$ref": "#/definitions/port" }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "namespace": { "type": "string" },
+        "sectionName": { "type": "string" },
+        "sharedHosts": { "$ref": "#/definitions/hostList" },
+        "dedicatedHosts": { "$ref": "#/definitions/hostList" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "$ref": "#/definitions/stringMap" },
+        "sharedHosts": { "$ref": "#/definitions/hostList" },
+        "dedicatedHosts": { "$ref": "#/definitions/hostList" },
+        "tls": { "type": "array" }
+      }
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "existingSecret": { "type": "string" }
+      }
+    },
+    "autoUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "schedule": { "type": "string", "minLength": 9 },
+        "channel": { "type": "string", "pattern": "^https?://" },
+        "allowMajor": { "type": "boolean" },
+        "waitSeconds": { "type": "integer", "minimum": 0, "maximum": 3600 },
+        "resources": { "type": "object" }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "size": { "type": "string" },
+        "storageClass": { "type": "string" },
+        "accessModes": { "type": "array", "items": { "type": "string" } },
+        "existingClaim": { "type": "string" }
+      }
+    },
+    "envFromSecret": { "type": "string" },
+    "filesSecret": { "type": "string" },
+    "extraEnv": { "type": "array" },
+    "timezone": { "type": "string" },
+    "replicaCount": { "type": "integer", "const": 1 },
+    "resources": { "type": "object" },
+    "podSecurityContext": { "type": "object" },
+    "containerSecurityContext": { "type": "object" },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "from": { "type": "array" }, "additionalRules": { "type": "array" } }
+        },
+        "egress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "to": { "type": "array" },
+            "ports": { "type": "array" },
+            "apiServerPorts": { "type": "array", "items": { "$ref": "#/definitions/port" } },
+            "relayPorts": { "type": "array" },
+            "additionalRules": { "type": "array" }
+          }
+        }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": { "type": ["integer", "string", "null"] },
+        "maxUnavailable": { "type": ["integer", "string", "null"] }
+      }
+    },
+    "podAnnotations": { "$ref": "#/definitions/stringMap" },
+    "nodeSelector": { "$ref": "#/definitions/stringMap" },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" }
+  }
+}

@@ -1,4 +1,5 @@
 {{- if .Values.networkPolicy.enabled }}
+{{- $egress := .Values.networkPolicy.egress }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -9,16 +10,21 @@ spec:
     matchLabels: {{- include "mailnite.selectorLabels" . | nindent 6 }}
   policyTypes:
     - Ingress
-    {{- if .Values.networkPolicy.egress.enabled }}
+    {{- if $egress.enabled }}
     - Egress
     {{- end }}
   ingress:
+    # The web ports (gateway/ingress backends) and, with a mail edge, the
+    # mail binds. The console (8480) is absent on purpose: port-forward
+    # reaches it from inside the pod's network namespace.
     - ports:
-        - { port: {{ .Values.service.web.httpPort }}, protocol: TCP }
-        - { port: {{ .Values.service.web.httpsPort }}, protocol: TCP }
-        {{- if .Values.service.mail.enabled }}
-        {{- range .Values.service.mail.ports }}
+        - { port: {{ .Values.web.httpPort }}, protocol: TCP }
+        - { port: {{ .Values.web.httpsPort }}, protocol: TCP }
+        {{- if include "mailnite.mailEdge" . }}
+        {{- range include "mailnite.mailPorts" . | fromJsonArray }}
+        {{- if ne (int .targetPort) (int $.Values.web.httpsPort) }}
         - { port: {{ .targetPort }}, protocol: TCP }
+        {{- end }}
         {{- end }}
         {{- end }}
       {{- with .Values.networkPolicy.ingress.from }}
@@ -27,13 +33,24 @@ spec:
     {{- with .Values.networkPolicy.ingress.additionalRules }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- if .Values.networkPolicy.egress.enabled }}
+  {{- if $egress.enabled }}
   egress:
-    - ports: {{- toYaml .Values.networkPolicy.egress.ports | nindent 8 }}
-      {{- with .Values.networkPolicy.egress.to }}
+    - ports:
+        {{- toYaml $egress.ports | nindent 8 }}
+        {{- if include "mailnite.mintKeys" . }}
+        # The key init container talks to the API server (post-DNAT port).
+        {{- range $egress.apiServerPorts }}
+        - { port: {{ . }}, protocol: TCP }
+        {{- end }}
+        {{- end }}
+        {{- if eq .Values.exposure "relay" }}
+        # The wizard's automatic VDS setup (SSH) and the relay tunnel.
+        {{- toYaml $egress.relayPorts | nindent 8 }}
+        {{- end }}
+      {{- with $egress.to }}
       to: {{- toYaml . | nindent 8 }}
       {{- end }}
-    {{- with .Values.networkPolicy.egress.additionalRules }}
+    {{- with $egress.additionalRules }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   {{- end }}
