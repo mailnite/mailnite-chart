@@ -42,10 +42,12 @@ load-balancer annotations and static-IP placement, and on GKE the gateway's
 `GCPBackendPolicy` (long requests) and `HealthCheckPolicy` (`/mail/`, since
 `/` answers 302).
 
-**Outbound mail on clouds:** Google Cloud blocks port 25 egress for all but a few
-exempt projects, Azure blocks it on most subscription types, and AWS throttles
-it until you ask. Receiving is
-fine; for sending, set a **smarthost** (587/465) in Infrastructure → Outbound.
+**Outbound mail on clouds:** port 25 egress may be blocked on your account —
+free and pay-as-you-go accounts usually are, corporate ones often not (Azure:
+Enterprise Agreement / MCA-E may send; AWS lifts its limit on request; Google
+exempts some established projects). Receiving is unaffected either way. Test
+sending in Infrastructure → Outbound; if it is blocked, set a **smarthost**
+(587/465) there.
 
 ## Quick starts
 

@@ -8,8 +8,10 @@
 #   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
 #     -n mail --create-namespace -f eks.yaml
 #
-# OUTBOUND: AWS throttles port 25 until you request removal (the form wants a
-# reverse DNS record). A smarthost (SES on 587) in Infrastructure → Outbound is simplest.
+# OUTBOUND: port 25 egress is limited on a new account until you ask AWS to
+# lift it (the form wants a reverse DNS record); corporate accounts often have
+# it lifted. Test it in Infrastructure → Outbound; a smarthost (SES on 587)
+# there is the simplest way to send.
 domain: example.com
 exposure: loadBalancer
 platform: eks

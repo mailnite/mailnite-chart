@@ -6,6 +6,34 @@
 {{- $ports := include "mailnite.mailPorts" . | fromJsonArray -}}
 {{- $viaGateway := and .Values.gateway.name (or $shared $dedicated) -}}
 {{- $webRouted := or $viaGateway .Values.ingress.enabled -}}
+{{- $ctx := dict "Values" .Values "Release" .Release "ns" $ns "name" $name "domain" $domain "ports" $ports "shared" $shared "dedicated" $dedicated "viaGateway" $viaGateway "webRouted" $webRouted -}}
+{{- if .Release.IsUpgrade -}}
+{{- /*
+An upgrade is not an installation: no banner, no wizard walkthrough. What the
+operator needs is the result, and only the sections this upgrade CHANGES —
+an edge that did not exist before (exposure moved off "none"), routes that
+are new — plus a one-line reminder while setup is still unfinished. lookup
+sees the cluster as it was before this upgrade, which is exactly the question.
+*/ -}}
+{{- $sts := lookup "apps/v1" "StatefulSet" $ns $name -}}
+{{- $edgeNew := and (has .Values.exposure (list "loadBalancer" "nodePort")) (not (lookup "v1" "Service" $ns (printf "%s-mail" $name))) -}}
+{{- $routesNew := and $viaGateway (not (lookup "gateway.networking.k8s.io/v1" "HTTPRoute" $ns (printf "%s-mail-path" $name))) -}}
+Mailnite {{ include "mailnite.tag" . }} — namespace {{ $ns }}, exposure={{ .Values.exposure }}, platform={{ .Values.platform }}
+Upgrade applied: chart {{ .Chart.Version }}, release revision {{ .Release.Revision }}.
+{{- if and $sts (not $sts.status.readyReplicas) }}
+
+The server is not Ready yet — setup still has to be finished in the browser:
+     kubectl -n {{ $ns }} port-forward statefulset/{{ $name }} 8480:8480   →  http://localhost:8480/mail/
+{{- end }}
+{{- if $edgeNew }}
+
+This upgrade put the server on the internet —
+{{- include "mailnite.notes.edge" $ctx }}
+{{- end }}
+{{- if $routesNew }}
+{{ include "mailnite.notes.gateway" $ctx }}
+{{- end }}
+{{- else -}}
 Mailnite {{ include "mailnite.tag" . }} — namespace {{ $ns }}, exposure={{ .Values.exposure }}, platform={{ .Values.platform }}
 
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -34,97 +62,15 @@ Mailnite {{ include "mailnite.tag" . }} — namespace {{ $ns }}, exposure={{ .Va
    maps the standard ports onto them.
 
 3) Put it on the internet —
-{{- if eq .Values.exposure "loadBalancer" }} LoadBalancer
-
-     kubectl -n {{ $ns }} get svc {{ $name }}-mail -w      # wait for EXTERNAL-IP
-
-   DNS (the wizard's DNS step lists the rest — SPF, DKIM, DMARC, MTA-STS):
-
-     mail.{{ $domain }}.   A    <EXTERNAL-IP>{{ with .Values.mail.loadBalancer.ip }}  ({{ . }}){{ end }}
-     {{ $domain }}.        MX   10 mail.{{ $domain }}.
-
-   Wizard: on the Mail relay step choose "No relay — reachable directly"
-   (this load balancer IS the edge). On the TLS step pick Let's Encrypt and
-   accept its Subscriber Agreement: the certificate is validated through this
-   load balancer's 443 (TLS-ALPN-01), no port 80 needed — the Servers step
-   shows it land ("issued").
-{{- if not .Values.mail.loadBalancer.ip }}
-   ! No static IP: the address changes if the Service is ever recreated, and
-     MX, PTR and reputation hang off it. Reserve one: mail.loadBalancer.ip.
-{{- end }}
-{{- if has .Values.platform (list "gke" "aks" "eks") }}
-
-   OUTBOUND MAIL: {{ get (dict "gke" "Google Cloud blocks port 25 egress for all but a few exempt projects" "aks" "Azure blocks port 25 egress on most subscription types (not EA / MCA-E)" "eks" "AWS throttles port 25 until you request its removal") .Values.platform }}.
-   Set a smarthost in Infrastructure → Outbound (a relay service on 587/465 —
-   SES, SendGrid, Mailgun, Postmark …) or delivery to other servers times out.
-   Receiving is unaffected.
-{{- end }}
-{{- else if eq .Values.exposure "nodePort" }} NodePort (router forwarding)
-
-   Forward these public ports on the router/firewall to any node:
-{{- range $ports }}
-     {{ printf "%-5v" .port }} → node:{{ .nodePort }}   ({{ .name }})
-{{- end }}
-
-   DNS: mail.{{ $domain }} A <the router's public IP>; {{ $domain }} MX 10 mail.{{ $domain }}.
-   Ask the ISP for a PTR record: that IP → mail.{{ $domain }}.
-
-   Wizard: on the Mail relay step choose "No relay — reachable directly".
-{{- if not .Values.mail.ports.https.enabled }}
-   Your gateway answers mail.{{ $domain }}:443, so Let's Encrypt validates over
-   HTTP-01 through it: http://mail.{{ $domain }}/.well-known/acme-challenge/
-   must reach the gateway (a redirect to https is fine).
-{{- end }}
-{{- else if eq .Values.exposure "relay" }} through a mailrelay
-
-   Nothing here listens publicly: the server dials OUT to a mailrelay on a
-   small VDS that owns the public IP (it stores no mail and no keys).
-
-   • Wizard → Mail relay → "Relay: automatic setup": give it the VDS's SSH
-     login. It installs the relay, pairs it (mTLS) and keeps it auto-updated.
-   • DNS: mail.{{ $domain }} A <the VDS's IP>, MX 10 mail.{{ $domain }}. On Cloudflare make
-     that record "DNS only" — the proxy carries no SMTP/IMAP.
-   • Ports step: choose Relay for BOTH groups. Emailed links (password resets
-     …) point at https://mail.{{ $domain }}/mail, which only the relay can serve.
-{{- if $webRouted }}
-     The gateway routes below keep working alongside: in a pod the server
-     answers the tunnel and the cluster at once.
-{{- else }}
-     With no gateway set, the relay is also how browsers reach webmail.
-{{- end }}
-   • Set the VDS's reverse DNS (PTR) to mail.{{ $domain }}: outbound mail leaves
-     from its IP.
-{{- else }} not yet (exposure=none)
-
-   Nothing is exposed. When the wizard is done, pick how the internet reaches
-   this cluster and upgrade:
-
-     helm upgrade {{ .Release.Name }} <chart> -n {{ $ns }} --reuse-values --set exposure=<mode>
-
-       loadBalancer   its own public IP (GKE, AKS, EKS, MetalLB, k3s)
-       relay          behind Cloudflare or a NAT — through a mailrelay VDS
-       nodePort       a router forwards the ports to fixed node ports
-{{- end }}
+{{- include "mailnite.notes.edge" $ctx }}
 {{- if $viaGateway }}
-
-4) Webmail through Gateway {{ .Values.gateway.namespace | default $ns }}/{{ .Values.gateway.name }}:
-{{- range $shared }}
-     https://{{ . }}/mail
-{{- end }}
-{{- range $dedicated }}
-     https://{{ . }}/
-{{- end }}
-
-   Behind a gateway, tell the server whom to trust for the client address:
-   Admin → Security → Reverse proxy (the gateway's addresses; provider
-   Cloudflare when it sits in front). Otherwise rate limits and the login log
-   see ONE client — the gateway.
-   Cloudflare: rules that add Content-Security-Policy must skip /mail/.
+{{ include "mailnite.notes.gateway" $ctx }}
 {{- end }}
 {{- if .Values.ingress.enabled }}
 
 4) Webmail through Ingress {{ $name }}{{ with .Values.ingress.className }} (class {{ . }}){{ end }} — same trust note:
    Admin → Security → Reverse proxy.
+{{- end }}
 {{- end }}
 
 Updates: {{ if .Values.autoUpdate.enabled -}}

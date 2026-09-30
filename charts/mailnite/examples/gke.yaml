@@ -9,8 +9,9 @@
 #   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
 #     -n mail --create-namespace -f gke.yaml
 #
-# OUTBOUND: GKE blocks port 25 egress. Set a smarthost (a relay service on
-# 587/465) in Infrastructure → Outbound, or delivery to other servers times out.
+# OUTBOUND: port 25 egress may be blocked on your project — most are, Google
+# exempts some established ones. Test it in Infrastructure → Outbound; if
+# blocked, set a smarthost (a relay service on 587/465) there.
 # Firewall: GKE opens the load balancer's ports itself; nothing to add.
 domain: example.com
 exposure: loadBalancer

@@ -10,8 +10,9 @@
 #   helm install mailnite oci://ghcr.io/mailnite/charts/mailnite \
 #     -n mail --create-namespace -f aks.yaml
 #
-# OUTBOUND: Azure blocks port 25 egress on most subscription types (not on
-# Enterprise Agreement / MCA-E). Set a smarthost (587/465) in Infrastructure → Outbound.
+# OUTBOUND: port 25 egress may be blocked on your subscription — free and
+# pay-as-you-go ones usually are, Enterprise Agreement / MCA-E may send. Test
+# it in Infrastructure → Outbound; if blocked, set a smarthost (587/465) there.
 domain: example.com
 exposure: loadBalancer
 platform: aks

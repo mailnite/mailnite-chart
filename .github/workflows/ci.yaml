@@ -71,9 +71,22 @@ jobs:
         run: |
           set -euo pipefail
           ns=mail
+
+          # The pod may not EXIST yet when we look: a StatefulSet re-creates a
+          # deleted pod asynchronously, and `kubectl wait` fails outright on a
+          # missing object — so poll for Running instead of waiting on it.
+          wait_running() {
+            for i in $(seq 60); do
+              [ "$(kubectl -n $ns get pod mailnite-0 -o jsonpath='{.status.phase}' 2>/dev/null)" = Running ] && return 0
+              sleep 5
+            done
+            kubectl -n $ns describe pod mailnite-0 || true
+            kubectl -n $ns logs mailnite-0 -c keys || true
+            return 1
+          }
+
           helm install mailnite charts/mailnite -n $ns --create-namespace
-          kubectl -n $ns wait --for=jsonpath='{.status.phase}'=Running pod/mailnite-0 --timeout=300s \
-            || { kubectl -n $ns describe pod mailnite-0; kubectl -n $ns logs mailnite-0 -c keys || true; exit 1; }
+          wait_running
 
           # the key init container minted a 32-byte standard-base64 key
           smk=$(kubectl -n $ns get secret mailnite-keys -o jsonpath='{.data.MAIL_SMK}' | base64 -d)
@@ -81,8 +94,13 @@ jobs:
 
           # the console answers (onboarding scope) through port-forward
           kubectl -n $ns port-forward sts/mailnite 8480:8480 >/dev/null & pf=$!
-          for i in $(seq 30); do curl -fsS http://127.0.0.1:8480/mail/api/setup/status && break; sleep 2; done
+          up=
+          for i in $(seq 30); do
+            curl -fsS http://127.0.0.1:8480/mail/api/setup/status 2>/dev/null && { up=1; break; }
+            sleep 2
+          done
           kill $pf
+          [ -n "$up" ] || { echo "the service console did not answer on :8480"; kubectl -n $ns logs mailnite-0 | tail -50; exit 1; }
 
           # one updater run completes (up to date, or moved forward)
           kubectl -n $ns create job --from=cronjob/mailnite-update upd
@@ -93,5 +111,5 @@ jobs:
           # an upgrade never touches the key
           helm upgrade mailnite charts/mailnite -n $ns --reuse-values
           kubectl -n $ns delete pod mailnite-0 --wait
-          kubectl -n $ns wait --for=jsonpath='{.status.phase}'=Running pod/mailnite-0 --timeout=300s
+          wait_running
           test "$(kubectl -n $ns get secret mailnite-keys -o jsonpath='{.data.MAIL_SMK}' | base64 -d)" = "$smk"
