@@ -8,7 +8,7 @@ description: >-
   NAT; webmail optionally through your Gateway API gateway or Ingress. Setup
   finishes in the BROWSER on the :8480 console (see the install notes).
 type: application
-version: 0.2.0
+version: 0.2.1
 # The Docker Hub tag format has NO leading v (release.yaml pushes
 # mailnite/mailnite:${VERSION#v}). 1.4.9 is the first release with the
 # `mailnite k8s keys|update` commands this chart runs.

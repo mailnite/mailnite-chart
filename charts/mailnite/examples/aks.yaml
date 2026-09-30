@@ -11,7 +11,7 @@
 #     -n mail --create-namespace -f aks.yaml
 #
 # OUTBOUND: Azure blocks port 25 egress on most subscription types (not on
-# Enterprise Agreement / MCA-E). Set a smarthost (587/465) in Admin → Mail.
+# Enterprise Agreement / MCA-E). Set a smarthost (587/465) in Infrastructure → Outbound.
 domain: example.com
 exposure: loadBalancer
 platform: aks
@@ -19,6 +19,7 @@ platform: aks
 mail:
   loadBalancer:
     ip: 203.0.113.25            # placed as azure-load-balancer-ipv4
+    # platform=aks also sets azure-load-balancer-tcp-idle-timeout: "30"
     annotations: {}
       # service.beta.kubernetes.io/azure-load-balancer-resource-group: my-network-rg
 

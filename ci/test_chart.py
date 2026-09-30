@@ -142,8 +142,15 @@ def check_gke(objs):
 
 def check_aks(objs):
     svc = check_lb_common(objs)
-    assert svc["metadata"]["annotations"]["service.beta.kubernetes.io/azure-load-balancer-ipv4"] == "203.0.113.25"
+    a = svc["metadata"]["annotations"]
+    assert a["service.beta.kubernetes.io/azure-load-balancer-ipv4"] == "203.0.113.25"
+    assert a["service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout"] == "30", "Azure's 4-minute idle default cuts IMAP IDLE"
     assert "loadBalancerIP" not in svc["spec"], "AKS takes the IP by annotation"
+
+
+def check_aks_idle_override(objs):
+    svc, _ = mail_service(objs)
+    assert svc["metadata"]["annotations"]["service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout"] == "60", "the user's annotation wins"
 
 
 def check_eks(objs):
@@ -152,6 +159,16 @@ def check_eks(objs):
     assert a["service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"] == "ip"
     assert a["service.beta.kubernetes.io/aws-load-balancer-target-group-attributes"] == "preserve_client_ip.enabled=true"
     assert a["service.beta.kubernetes.io/aws-load-balancer-eip-allocations"].startswith("eipalloc-")
+    idle = "service.beta.kubernetes.io/aws-load-balancer-listener-attributes.TCP-"
+    for port in (993, 143):
+        assert a[f"{idle}{port}"] == "tcp.idle_timeout.seconds=1800", "the NLB's 350 s idle default cuts IMAP IDLE"
+    assert f"{idle}25" not in a, "only the IMAP listeners hold idle connections"
+
+
+def check_eks_imaps_only(objs):
+    a = mail_service(objs)[0]["metadata"]["annotations"]
+    idle = "service.beta.kubernetes.io/aws-load-balancer-listener-attributes.TCP-"
+    assert f"{idle}993" in a and f"{idle}143" not in a, "no listener, no listener attributes"
 
 
 def routes(objs):
@@ -245,7 +262,9 @@ SCENARIOS = [
     ("defaults", [], [], [], check_defaults),
     ("gke", ["gke.yaml"], [], ["--api-versions", GKE_APIS[0], "--api-versions", GKE_APIS[1]], check_gke),
     ("aks", ["aks.yaml"], [], [], check_aks),
+    ("aks-idle-override", ["aks.yaml"], [], ["--set-string", "mail.loadBalancer.annotations.service\\.beta\\.kubernetes\\.io/azure-load-balancer-tcp-idle-timeout=60"], check_aks_idle_override),
     ("eks", ["eks.yaml"], [], [], check_eks),
+    ("eks-imaps-only", ["eks.yaml"], ["mail.ports.imap.enabled=false"], [], check_eks_imaps_only),
     ("cloudflare-relay", ["cloudflare-relay.yaml"], [], [], check_cloudflare_relay),
     ("homelab-nat", ["homelab-nat.yaml"], [], [], check_homelab),
     ("router-nodeport", ["router-nodeport.yaml"], [], [], check_router),

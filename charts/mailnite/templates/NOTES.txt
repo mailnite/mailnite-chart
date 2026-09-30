@@ -43,16 +43,20 @@ Mailnite {{ include "mailnite.tag" . }} — namespace {{ $ns }}, exposure={{ .Va
      mail.{{ $domain }}.   A    <EXTERNAL-IP>{{ with .Values.mail.loadBalancer.ip }}  ({{ . }}){{ end }}
      {{ $domain }}.        MX   10 mail.{{ $domain }}.
 
-   Ports step: every group "Direct" — this load balancer IS the edge.
+   Wizard: on the Mail relay step choose "No relay — reachable directly"
+   (this load balancer IS the edge). On the TLS step pick Let's Encrypt and
+   accept its Subscriber Agreement: the certificate is validated through this
+   load balancer's 443 (TLS-ALPN-01), no port 80 needed — the Servers step
+   shows it land ("issued").
 {{- if not .Values.mail.loadBalancer.ip }}
    ! No static IP: the address changes if the Service is ever recreated, and
      MX, PTR and reputation hang off it. Reserve one: mail.loadBalancer.ip.
 {{- end }}
 {{- if has .Values.platform (list "gke" "aks" "eks") }}
 
-   OUTBOUND MAIL: {{ get (dict "gke" "GKE blocks port 25 egress — always" "aks" "Azure blocks port 25 egress on most subscription types (not EA / MCA-E)" "eks" "AWS throttles port 25 until you request its removal") .Values.platform }}.
-   Set a smarthost in Admin → Mail (a relay service on 587/465 — SES,
-   SendGrid, Mailgun, Postmark …) or delivery to other servers times out.
+   OUTBOUND MAIL: {{ get (dict "gke" "Google Cloud blocks port 25 egress for all but a few exempt projects" "aks" "Azure blocks port 25 egress on most subscription types (not EA / MCA-E)" "eks" "AWS throttles port 25 until you request its removal") .Values.platform }}.
+   Set a smarthost in Infrastructure → Outbound (a relay service on 587/465 —
+   SES, SendGrid, Mailgun, Postmark …) or delivery to other servers times out.
    Receiving is unaffected.
 {{- end }}
 {{- else if eq .Values.exposure "nodePort" }} NodePort (router forwarding)
@@ -64,13 +68,20 @@ Mailnite {{ include "mailnite.tag" . }} — namespace {{ $ns }}, exposure={{ .Va
 
    DNS: mail.{{ $domain }} A <the router's public IP>; {{ $domain }} MX 10 mail.{{ $domain }}.
    Ask the ISP for a PTR record: that IP → mail.{{ $domain }}.
+
+   Wizard: on the Mail relay step choose "No relay — reachable directly".
+{{- if not .Values.mail.ports.https.enabled }}
+   Your gateway answers mail.{{ $domain }}:443, so Let's Encrypt validates over
+   HTTP-01 through it: http://mail.{{ $domain }}/.well-known/acme-challenge/
+   must reach the gateway (a redirect to https is fine).
+{{- end }}
 {{- else if eq .Values.exposure "relay" }} through a mailrelay
 
    Nothing here listens publicly: the server dials OUT to a mailrelay on a
    small VDS that owns the public IP (it stores no mail and no keys).
 
-   • Wizard → Mail relay → Automatic: give it the VDS's SSH login. It installs
-     the relay, pairs it (mTLS) and keeps it auto-updated.
+   • Wizard → Mail relay → "Relay: automatic setup": give it the VDS's SSH
+     login. It installs the relay, pairs it (mTLS) and keeps it auto-updated.
    • DNS: mail.{{ $domain }} A <the VDS's IP>, MX 10 mail.{{ $domain }}. On Cloudflare make
      that record "DNS only" — the proxy carries no SMTP/IMAP.
    • Ports step: choose Relay for BOTH groups. Emailed links (password resets

@@ -10,7 +10,7 @@
 #     -n mail --create-namespace -f gke.yaml
 #
 # OUTBOUND: GKE blocks port 25 egress. Set a smarthost (a relay service on
-# 587/465) in Admin → Mail, or delivery to other servers times out.
+# 587/465) in Infrastructure → Outbound, or delivery to other servers times out.
 # Firewall: GKE opens the load balancer's ports itself; nothing to add.
 domain: example.com
 exposure: loadBalancer

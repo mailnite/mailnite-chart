@@ -42,9 +42,10 @@ load-balancer annotations and static-IP placement, and on GKE the gateway's
 `GCPBackendPolicy` (long requests) and `HealthCheckPolicy` (`/mail/`, since
 `/` answers 302).
 
-**Outbound mail on clouds:** GKE always blocks port 25 egress, Azure blocks it on
-most subscription types, and AWS throttles it until you ask. Receiving is
-fine; for sending, set a **smarthost** (587/465) in Admin → Mail.
+**Outbound mail on clouds:** Google Cloud blocks port 25 egress for all but a few
+exempt projects, Azure blocks it on most subscription types, and AWS throttles
+it until you ask. Receiving is
+fine; for sending, set a **smarthost** (587/465) in Infrastructure → Outbound.
 
 ## Quick starts
 
@@ -62,6 +63,12 @@ Ready-made values in [`charts/mailnite/examples`](charts/mailnite/examples):
 ```bash
 helm install mailnite oci://ghcr.io/mailnite/charts/mailnite -n mail --create-namespace -f gke.yaml
 ```
+
+Step-by-step guides, from an empty account to a working server:
+[Azure (AKS)](https://github.com/mailnite/mailnite-dist/blob/main/azure.md) ·
+[Google Cloud (GKE)](https://github.com/mailnite/mailnite-dist/blob/main/gcp.md) ·
+[AWS (EKS)](https://github.com/mailnite/mailnite-dist/blob/main/aws.md) ·
+[your own cluster with a Gateway](https://github.com/mailnite/mailnite-dist/blob/main/kubernetes.md).
 
 ## What makes it hard to break
 

@@ -111,6 +111,9 @@ VDS, which serve it themselves.
 {{- if eq .Values.platform "gke" -}}
 {{- $_ := set $a "cloud.google.com/l4-rbs" "enabled" -}}
 {{- else if eq .Values.platform "aks" -}}
+{{- /* Azure drops idle flows after 4 minutes by default: IMAP IDLE (push in
+       Apple Mail, Thunderbird …) needs longer. 4–100 minutes. */ -}}
+{{- $_ := set $a "service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout" "30" -}}
 {{- with .Values.mail.loadBalancer.ip -}}
 {{- $_ := set $a "service.beta.kubernetes.io/azure-load-balancer-ipv4" . -}}
 {{- end -}}
@@ -119,6 +122,14 @@ VDS, which serve it themselves.
 {{- $_ := set $a "service.beta.kubernetes.io/aws-load-balancer-scheme" "internet-facing" -}}
 {{- $_ := set $a "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" "ip" -}}
 {{- $_ := set $a "service.beta.kubernetes.io/aws-load-balancer-target-group-attributes" "preserve_client_ip.enabled=true" -}}
+{{- /* The NLB resets a flow idle for 350 s, and IMAP IDLE (push mail) sits
+       silent for up to 29 minutes: 30 on the IMAP listeners. */ -}}
+{{- range $name := list "imaps" "imap" -}}
+{{- $p := index $.Values.mail.ports $name -}}
+{{- if and $p $p.enabled -}}
+{{- $_ := set $a (printf "service.beta.kubernetes.io/aws-load-balancer-listener-attributes.TCP-%v" $p.port) "tcp.idle_timeout.seconds=1800" -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- $a = merge (deepCopy .Values.mail.loadBalancer.annotations) $a -}}
 {{- if $a -}}

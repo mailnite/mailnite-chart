@@ -39,10 +39,12 @@ exposure: none
 #   gke      L4 load balancer on backend services, static-IP placement, and for
 #            the gateway: a GCPBackendPolicy (long requests) + HealthCheckPolicy
 #            (the LB's health check needs a 200 — "/" answers 302)
-#   aks      static-IP annotation for the Azure load balancer
-#   eks      AWS Load Balancer Controller NLB with client-IP preservation
-#            (needs the controller; static IPs are Elastic IP allocations — see
-#            examples/eks.yaml)
+#   aks      static-IP annotation for the Azure load balancer, and a 30-minute
+#            idle timeout (Azure's 4-minute default cuts IMAP IDLE / push mail)
+#   eks      AWS Load Balancer Controller NLB with client-IP preservation and
+#            a 30-minute idle timeout on the IMAP listeners (the NLB's 350 s
+#            default cuts IMAP IDLE) — needs the controller; static IPs are
+#            Elastic IP allocations, see examples/eks.yaml
 platform: generic
 
 # platform=gke, with a gateway or ingress: the L7 load balancer's backend
