@@ -34,7 +34,7 @@ receive raw TCP on a public IP?**
 |---|---|---|
 | Cloud with load balancers — GKE, AKS, EKS; bare metal with MetalLB; k3s | `loadBalancer` | One L4 LoadBalancer (static IP recommended): 25, 465, 587, 993, 143 and 443 for `mail.<domain>`. `externalTrafficPolicy: Local`, so SPF/DNSBL see the real client. |
 | Bare metal behind a router with a public IP, forwarding ports | `nodePort` | The same ports on fixed NodePorts (30025, …) for the router to forward to. |
-| Behind **Cloudflare**, a NAT, a home router — no inbound TCP, or port 25 already taken | `relay` | Nothing public. The server dials **out** to a [mailrelay](https://github.com/mailnite/mailrelay) on a small VDS that owns the public IP; the wizard installs and pairs it over SSH. The VDS stores no mail and no keys. |
+| Behind **Cloudflare**, a NAT, a home router — no inbound TCP, or port 25 already taken | `relay` | Nothing public. The server dials **out** to a [mailrelay](https://github.com/mailnite/mailrelay) on a small machine that owns the public IP: the wizard makes one in your own AWS, Google Cloud or Azure account, or installs and pairs the relay on a VDS you have over SSH. The machine stores no mail and no keys. |
 | Just trying it | `none` (default) | Nothing public: port-forward only. Never a surprise load balancer. |
 
 `platform` (`generic` \| `gke` \| `aks` \| `eks`) adds what that cloud needs:
@@ -93,8 +93,8 @@ Step-by-step guides, from an empty account to a working server:
 - **Least privilege.** The server's container mounts no API token. The key
   init container may read one Secret and create it once. The updater may read
   and patch one StatefulSet. A NetworkPolicy admits only the published ports
-  and allows egress only for mail, DNS, HTTP(S), the API server and, in relay
-  mode, SSH plus the tunnel.
+  and allows egress only for mail, DNS, HTTP(S), an in-cluster Ollama, the API
+  server and, in relay mode, SSH plus the tunnel.
 
 ## Develop
 

@@ -69,7 +69,7 @@ Mailnite {{ include "mailnite.tag" . }} — namespace {{ $ns }}, exposure={{ .Va
 {{- if .Values.ingress.enabled }}
 
 4) Webmail through Ingress {{ $name }}{{ with .Values.ingress.className }} (class {{ . }}){{ end }} — same trust note:
-   Admin → Security → Reverse proxy.
+   Infrastructure → Security → Reverse proxy client addresses.
 {{- end }}
 {{- end }}
 

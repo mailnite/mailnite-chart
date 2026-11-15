@@ -89,10 +89,11 @@ Services, so the process never needs `NET_BIND_SERVICE`.
 
 The NetworkPolicy admits only the published ports. The console (8480) is not
 among them: port-forward reaches it from inside the pod's network namespace.
-Egress is allowed only to DNS, HTTP(S), SMTP delivery and smarthosts, and the
-API server (443/6443, for the key step); with `exposure=relay`, SSH plus the
-relay's control port (8443 TCP/UDP) are added. Private S3, OIDC, LDAP or
-custom smarthost ports go in `networkPolicy.egress.additionalRules`.
+Egress is allowed only to DNS, HTTP(S), SMTP delivery and smarthosts, an
+in-cluster Ollama (11434, where the AI connector looks by default in a pod),
+and the API server (443/6443, for the key step); with `exposure=relay`, SSH
+plus the relay's control port (8443 TCP/UDP) are added. Private S3, OIDC, LDAP
+or custom smarthost ports go in `networkPolicy.egress.additionalRules`.
 
 ## Gotchas worth knowing
 
@@ -101,9 +102,20 @@ custom smarthost ports go in `networkPolicy.egress.additionalRules`.
   also pass as env would silently win over the console's own saves after the
   next restart. Keep `extraEnv` / `envFromSecret` for what the console does
   not own.
-- **Behind a gateway or ingress** set Admin → Security → Reverse proxy (the
-  gateway's addresses; provider Cloudflare when it sits in front). Otherwise
-  rate limits and the login log see a single client: the gateway.
+- **Behind a gateway or ingress** set Infrastructure → Security → Reverse
+  proxy client addresses (the gateway's addresses; provider Cloudflare when it
+  sits in front). Otherwise rate limits and the login log see a single client:
+  the gateway.
+- **A relay needs `exposure=relay` first.** Pairing a mailrelay from the
+  wizard (a cloud machine it makes, or a VDS you have) dials out over SSH and
+  the relay's control port, which the NetworkPolicy opens only in that mode.
+  With `exposure=none`, answer the wizard's Mail relay step with "Later — no
+  public transport yet" and pair after the upgrade.
+- **Helm 4: `conflicts with "Go-http-client"`** (or `"mailnite-k8s"`) on the
+  image fields during `helm upgrade`: an updater older than Mailnite 1.5.2
+  had written the image before. Run that upgrade once with
+  `--force-conflicts`. From 1.5.2 the updater hands the fields back to Helm
+  after every run, so it does not recur.
 - **Cloudflare:** `mail.<domain>` must be "DNS only"; rules adding a
   Content-Security-Policy must skip `/mail/`.
 - **ingress-nginx** limits request bodies to 1 MB by default: set

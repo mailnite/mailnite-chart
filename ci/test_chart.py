@@ -112,6 +112,7 @@ def check_defaults(objs):
     ports = egress_ports(objs)
     assert (6443, "TCP") in ports, "the key init container must reach a kubeadm API server"
     assert (22, "TCP") not in ports, "SSH egress only with exposure=relay"
+    assert (11434, "TCP") in ports, "the AI connector's in-pod default is an in-cluster Ollama on 11434"
 
 
 def mail_service(objs):

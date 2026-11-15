@@ -16,11 +16,12 @@ viaGateway, webRouted.
      mail.{{ $domain }}.   A    <EXTERNAL-IP>{{ with .Values.mail.loadBalancer.ip }}  ({{ . }}){{ end }}
      {{ $domain }}.        MX   10 mail.{{ $domain }}.
 
-   Wizard: on the Mail relay step choose "No relay — reachable directly"
-   (this load balancer IS the edge). On the TLS step pick Let's Encrypt and
-   accept its Subscriber Agreement: the certificate is validated through this
-   load balancer's 443 (TLS-ALPN-01), no port 80 needed — the Servers step
-   shows it land ("issued").
+   Wizard: the Mail relay step asks how the internet reaches this server —
+   answer "Directly — a public IP, port forwards or a Kubernetes load
+   balancer" (this load balancer IS the edge). On the TLS step pick Let's
+   Encrypt and accept its Subscriber Agreement: the certificate is validated
+   through this load balancer's 443 (TLS-ALPN-01), no port 80 needed — the
+   Servers step shows it land ("issued").
 {{- if not .Values.mail.loadBalancer.ip }}
    ! No static IP: the address changes if the Service is ever recreated, and
      MX, PTR and reputation hang off it. Reserve one: mail.loadBalancer.ip.
@@ -44,7 +45,9 @@ viaGateway, webRouted.
    DNS: mail.{{ $domain }} A <the router's public IP>; {{ $domain }} MX 10 mail.{{ $domain }}.
    Ask the ISP for a PTR record: that IP → mail.{{ $domain }}.
 
-   Wizard: on the Mail relay step choose "No relay — reachable directly".
+   Wizard: the Mail relay step asks how the internet reaches this server —
+   answer "Directly — a public IP, port forwards or a Kubernetes load
+   balancer".
 {{- if not .Values.mail.ports.https.enabled }}
    Your gateway answers mail.{{ $domain }}:443, so Let's Encrypt validates over
    HTTP-01 through it: http://mail.{{ $domain }}/.well-known/acme-challenge/
@@ -53,12 +56,19 @@ viaGateway, webRouted.
 {{- else if eq .Values.exposure "relay" }} through a mailrelay
 
    Nothing here listens publicly: the server dials OUT to a mailrelay on a
-   small VDS that owns the public IP (it stores no mail and no keys).
+   small machine that owns the public IP (it stores no mail and no keys).
 
-   • Wizard → Mail relay → "Relay: automatic setup": give it the VDS's SSH
-     login. It installs the relay, pairs it (mTLS) and keeps it auto-updated.
-   • DNS: mail.{{ $domain }} A <the VDS's IP>, MX 10 mail.{{ $domain }}. On Cloudflare make
-     that record "DNS only" — the proxy carries no SMTP/IMAP.
+   • Wizard → Mail relay asks how the internet reaches this server:
+       "Through a relay on a cloud machine made for me" — the console makes
+         the machine in your own AWS, Google Cloud or Azure account (add the
+         account under Infrastructure → Cloud providers) on a reserved
+         address;
+       "Through a relay on a VDS I have (set up over SSH)" — give it the
+         VDS's SSH login.
+     Either way it installs the relay, pairs it (mTLS) and keeps it
+     auto-updated.
+   • DNS: mail.{{ $domain }} A <the relay machine's IP>, MX 10 mail.{{ $domain }}. On Cloudflare
+     make that record "DNS only" — the proxy carries no SMTP/IMAP.
    • Ports step: choose Relay for BOTH groups. Emailed links (password resets
      …) point at https://mail.{{ $domain }}/mail, which only the relay can serve.
 {{- if .webRouted }}
@@ -67,17 +77,21 @@ viaGateway, webRouted.
 {{- else }}
      With no gateway set, the relay is also how browsers reach webmail.
 {{- end }}
-   • Set the VDS's reverse DNS (PTR) to mail.{{ $domain }}: outbound mail leaves
-     from its IP.
+   • The reverse DNS (PTR) of that IP must be mail.{{ $domain }}: outbound mail
+     leaves from it. The console sets it for a cloud machine it made; for
+     your own VDS, set it at the provider.
 {{- else }} not yet (exposure=none)
 
-   Nothing is exposed. When the wizard is done, pick how the internet reaches
-   this cluster and upgrade:
+   Nothing is exposed. On the wizard's Mail relay step answer "Later — no
+   public transport yet": everything inside works meanwhile, and the Dashboard
+   keeps the note. Then pick how the internet reaches this cluster and upgrade:
 
      helm upgrade {{ .Release.Name }} <chart> -n {{ $ns }} --reuse-values --set exposure=<mode>
 
        loadBalancer   its own public IP (GKE, AKS, EKS, MetalLB, k3s)
-       relay          behind Cloudflare or a NAT — through a mailrelay VDS
+       relay          behind Cloudflare or a NAT — through a mailrelay on a
+                      cloud machine or a VDS. Pair it AFTER this upgrade:
+                      exposure=relay is what lets the pod dial out to it.
        nodePort       a router forwards the ports to fixed node ports
 {{- end }}
 {{- end }}
@@ -92,8 +106,8 @@ viaGateway, webRouted.
 {{- end }}
 
    Behind a gateway, tell the server whom to trust for the client address:
-   Admin → Security → Reverse proxy (the gateway's addresses; provider
-   Cloudflare when it sits in front). Otherwise rate limits and the login log
-   see ONE client — the gateway.
+   Infrastructure → Security → Reverse proxy client addresses (the gateway's
+   addresses; provider Cloudflare when it sits in front). Otherwise rate
+   limits and the login log see ONE client — the gateway.
    Cloudflare: rules that add Content-Security-Policy must skip /mail/.
 {{- end }}

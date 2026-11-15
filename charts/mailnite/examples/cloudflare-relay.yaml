@@ -2,8 +2,9 @@
 # which cannot take raw TCP from the internet — Cloudflare's proxy carries no
 # SMTP/IMAP, or the one public port 25 already belongs to another server.
 #
-# Mail rides a mailrelay on a small VDS (the wizard's Mail relay step sets it
-# up over SSH; the VDS stores nothing). Webmail answers in two places:
+# Mail rides a mailrelay on a small machine: a cloud machine the wizard's Mail
+# relay step makes in your own cloud account, or a VDS it sets up over SSH
+# (the machine stores nothing). Webmail answers in two places:
 #   https://<domain>/mail        through Cloudflare + the gateway (this route)
 #   https://mail.<domain>/mail   through the relay (Ports step: Relay for both
 #                                groups — emailed links use this one)

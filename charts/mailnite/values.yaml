@@ -29,9 +29,11 @@ domain: ""
 #                 FIXED node ports (bare metal with the public IP on a router).
 #   relay         The cluster cannot take raw TCP from the internet: it is behind
 #                 Cloudflare, a NAT, a home router. mailnite dials OUT to a
-#                 mailrelay on a small VDS that owns the public IP; the wizard's
-#                 "Mail relay" step installs and pairs it over SSH. The VDS stores
-#                 no mail and no keys — losing it loses nothing.
+#                 mailrelay on a small machine that owns the public IP. The
+#                 wizard's "Mail relay" step makes that machine in your own AWS,
+#                 Google Cloud or Azure account, or installs and pairs the relay
+#                 on a VDS you have over SSH. The machine stores no mail and no
+#                 keys — losing it loses nothing.
 exposure: none
 
 # Where the cluster runs. Adds what that platform needs so you don't have to:
@@ -221,9 +223,10 @@ containerSecurityContext:
     drop: [ALL]
 
 # Ingress is limited to the ports the chart publishes; egress to DNS, HTTP(S),
-# SMTP delivery and smarthosts, the Kubernetes API (the key init container)
-# and — with exposure=relay — SSH + the relay's control port. Add rules for
-# private S3, OIDC, LDAP or non-standard smarthost endpoints.
+# SMTP delivery and smarthosts, an in-cluster Ollama, the Kubernetes API (the
+# key init container) and — with exposure=relay — SSH + the relay's control
+# port. Add rules for private S3, OIDC, LDAP or non-standard smarthost
+# endpoints.
 networkPolicy:
   enabled: true
   ingress:
@@ -243,10 +246,14 @@ networkPolicy:
       - { port: 465, protocol: TCP }
       - { port: 587, protocol: TCP }
       - { port: 2525, protocol: TCP }
+      # Ollama in the cluster: in a pod the AI connector's default address is
+      # http://ollama.ollama.svc.cluster.local:11434.
+      - { port: 11434, protocol: TCP }
     # The API server's own port where it is not 443 (kubeadm: 6443).
     apiServerPorts: [443, 6443]
-    # exposure=relay: SSH for the wizard's automatic VDS setup, and the relay's
-    # control port (TCP; UDP for the QUIC transport). Match a changed port.
+    # exposure=relay: SSH for the wizard's relay setup (a cloud machine it
+    # makes, or a VDS you have), and the relay's control port (TCP; UDP for
+    # the QUIC transport). Match a changed port.
     relayPorts:
       - { port: 22, protocol: TCP }
       - { port: 8443, protocol: TCP }
